@@ -222,7 +222,7 @@ GORUSME_SORULARI = [
     ("q11_mevcut_calisma_modeli", "Mevcut çalışma modelinle ilgili ne düşünüyorsun?"),
     ("q12_ilerisi_calisma_modeli", "İlerisi için nasıl bir çalışma modeli olursa daha verimli çalışacağına inanıyorsun?"),
     ("q13_harmony", "Harmony ile ilgili görüşlerin nasıl, çalışma sürecine olan etkisini nasıl değerlendirirsin?"),
-    ("q14_toplandigimiza_degsin", ""Toplandığımıza Değsin" temasının ne kadar işlendiğini düşünüyorsun?"),
+    ("q14_toplandigimiza_degsin", '"Toplandığımıza Değsin" temasının ne kadar işlendiğini düşünüyorsun?'),
     ("q15_karar_alma_surecleri", "Karar alma süreçlerini hem ekip içi işleyişler hem de üst yönetim seviyesinde nasıl değerlendirirsin?"),
 ]
 
@@ -358,21 +358,21 @@ TR_STOPWORDS = {
 }
 
 SEMANTIC_EQUIVALENTS = [
-    (r"(uzaktan|remote|evden|home\s*office)", "uzaktan_calisma"),
-    (r"(hibrit|ofis\s*gün|ofise\s*gel|ofis\s*sayı)", "hibrit_ofis"),
-    (r"(terfi|unvan|kariyer\s*yolu|kariyer\s*ilerle|pozisyon\s*değiş)", "kariyer_terfi"),
-    (r"(ücret|maaş|zam|prim|yan\s*hak|enflasyon|gelir)", "ucret_yan_hak"),
-    (r"(geri\s*bildirim|feedback|1-1|bire\s*bir|birebir)", "geri_bildirim"),
-    (r"(yetki|onay\s*sürec|onay\s*mekanizma|bürokrasi|karar\s*alma|karar\s*sürec)", "karar_yetki_onay"),
-    (r"(yetkinlik\s*merkezi|ym|matris\s*yapı)", "yetkinlik_merkezi"),
-    (r"(iş\s*yük|yoğunluk|mesai|iş\s*yaşam|iş-yaşam|denge)", "is_yuku_denge"),
-    (r"(toplantı|toplandığımıza\s*değsin|gereksiz\s*toplantı)", "toplanti_verimlilik"),
-    (r"(harmony|karne|performans\s*değerlendir|hedef\s*gir)", "harmony_karne"),
-    (r"(yapay\s*zeka|codemantis|amigo|asistan|yz|ai)", "yapay_zeka_arac"),
-    (r"(eğitim|akademi|gelişim|teknik\s*eğitim|mentor)", "egitim_akademi"),
-    (r"(ekip\s*içi|takım\s*arkadaş|yardımlaş|iş\s*birliği|iletişim\s*güçlü)", "ekip_iletisim"),
-    (r"(yönetici|direktör|gmy|üst\s*yönetim|lider)", "yonetim_iletisim"),
-    (r"(proje|ürün|teknoloji|sorumluluk|katkı)", "proje_rol_tatmin"),
+    (r"\b(uzaktan|remote|evden|home\s*office)\b", "uzaktan_calisma"),
+    (r"\b(hibrit|ofis\s*gün|ofise\s*gel|ofis\s*sayı)\b", "hibrit_ofis"),
+    (r"\b(terfi|unvan|kariyer\s*yolu|kariyer\s*ilerle|pozisyon\s*değiş)\b", "kariyer_terfi"),
+    (r"\b(ücret|maaş|zam|prim|yan\s*hak|enflasyon|gelir)\b", "ucret_yan_hak"),
+    (r"\b(geri\s*bildirim|feedback|1-1|bire\s*bir|birebir)\b", "geri_bildirim"),
+    (r"\b(yetki|onay\s*sürec|onay\s*mekanizma|bürokrasi|karar\s*alma|karar\s*sürec)\b", "karar_yetki_onay"),
+    (r"\b(yetkinlik\s*merkezi|ym\b|matris\s*yapı)\b", "yetkinlik_merkezi"),
+    (r"\b(iş\s*yük|yoğunluk|mesai|iş\s*yaşam|iş-yaşam|denge)\b", "is_yuku_denge"),
+    (r"\b(toplantı|toplandığımıza\s*değsin|gereksiz\s*toplantı)\b", "toplanti_verimlilik"),
+    (r"\b(harmony|karne|performans\s*değerlendir|hedef\s*gir)\b", "harmony_karne"),
+    (r"\b(yapay\s*zeka|codemantis|amigo|asistan|\byz\b|\bai\b)\b", "yapay_zeka_arac"),
+    (r"\b(eğitim|akademi|gelişim|teknik\s*eğitim|mentor)\b", "egitim_akademi"),
+    (r"\b(ekip\s*içi|takım\s*arkadaş|yardımlaş|iş\s*birliği|iletişim\s*güçlü)\b", "ekip_iletisim"),
+    (r"\b(yönetici|direktör|gmy|üst\s*yönetim|lider)\b", "yonetim_iletisim"),
+    (r"\b(proje|ürün|teknoloji|sorumluluk|katkı)\b", "proje_rol_tatmin"),
 ]
 
 CANONICAL_TOPIC_LABELS = {
@@ -432,11 +432,10 @@ def split_clauses(text: str) -> list[str]:
     cleaned = text.strip()
     if not cleaned:
         return []
-    parts = re.split(r"[.!?
-;]+|,\s+(?=[A-ZÇĞİÖŞÜa-zçğıöşü]{3,})", cleaned)
+    parts = re.split(r"[.!?\n;]+|,\s+(?=[A-ZÇĞİÖŞÜa-zçğıöşü]{3,})", cleaned)
     result = []
     for p in parts:
-        item = re.sub(r"\s+", " ", p).strip(" -•	")
+        item = re.sub(r"\s+", " ", p).strip(" -•\t")
         if len(item) >= 4:
             result.append(item)
     return result if result else [cleaned]
@@ -495,7 +494,6 @@ def cluster_similar_statements(
     except Exception:
         sim_mat = np.eye(n)
 
-    # Ortak kanonik kavram paylaşan cümlelerin benzerlik skorunu güçlendir
     topics_per_item = [set(extract_canonical_topics(txt)) for _, txt in filtered_records]
     for i in range(n):
         if not topics_per_item[i]:
@@ -506,7 +504,6 @@ def cluster_similar_statements(
                 sim_mat[i, j] = boosted
                 sim_mat[j, i] = boosted
 
-    # Açgözlü (greedy) merkez tabanlı kümeleme: en çok komşusu olan cümle küme merkezi olur
     unassigned = set(range(n))
     clusters = []
 
@@ -520,20 +517,17 @@ def cluster_similar_statements(
             unassigned.remove(m)
         clusters.append(members)
 
-    # Kümeleri benzersiz kişi sayısına göre sırala
     ranked_clusters = []
     for member_idxs in clusters:
         unique_people = {filtered_records[idx][0] for idx in member_idxs}
         person_count = len(unique_people)
 
-        # Küme içinden en net ve orta uzunluktaki temsilci cümleyi seç
         candidate_texts = [filtered_records[idx][1] for idx in member_idxs]
         rep_text = min(
             candidate_texts,
             key=lambda t: (abs(len(t) - 65), -len(t)),
         )
 
-        # Kümede baskın bir ana konu varsa parantez içi tema etiketiyle zenginleştir
         topic_counter = Counter(
             t_key for idx in member_idxs for t_key in topics_per_item[idx]
         )
@@ -550,7 +544,7 @@ def cluster_similar_statements(
     out = []
     for person_count, _, tema_etiketi, rep_text in ranked_clusters[:top_n]:
         if person_count > 1:
-            out.append(f"{tema_etiketi}"{rep_text}" ({person_count} kişi benzer görüş bildirdi)")
+            out.append(f'{tema_etiketi}"{rep_text}" ({person_count} kişi benzer görüş bildirdi)')
         else:
             out.append(f"{tema_etiketi}{rep_text}")
     return out
@@ -1088,7 +1082,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     dept_analiz = analyze_department_and_units(df_filtered, secili_gmy)
     birim_gruplari = [dept_analiz["birimler"][i : i + 4] for i in range(0, len(dept_analiz["birimler"]), 4)]
 
-    # Sabit slaytlar: s1, s2, s3, s_dept, s6, s7 (6 slayt) + dinamik soru & birim slaytları
     total_slides = 6 + max(1, len(soru_slayt_gruplari)) + max(1, len(birim_gruplari))
     slide_counter = 1
 
