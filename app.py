@@ -1,5 +1,7 @@
 import io
 from datetime import date, datetime
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -174,29 +176,13 @@ DEFAULT_USERS = {
         "ad_soyad": "Şeyma (İK İş Ortağı)",
         "sifre": "panel2026",
         "rol": "hrbp",
-        "gmy_birimler": {
-            "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri": [
-                "10000474-Kurumsal Uygulamalar",
-                "10000475-Mobil Uygulamalar",
-                "10000127-Çok Kanallı Bankacılık",
-            ],
-            "10000028-Teknoloji, Yapay Zeka ve Sürekli İyileştirme": [
-                "10000464-İş Analizi Yetkinlik Merkezi",
-                "10000483-Yapay Zeka Yetkinlik Merkezi",
-                "10000486-Mimari Yetkinlik Merkezi",
-            ],
-        },
+        "gmy_birimler": GMY_BIRIM_MAP,
     },
     "hrbp_ornek": {
         "ad_soyad": "Örnek HRBP",
         "sifre": "panel2026",
         "rol": "hrbp",
-        "gmy_birimler": {
-            "10000023-Mevduat, Kredi, Süreç ve Ödemeler": [
-                "10000134-Ödemeler",
-                "10000160-Ticari Krediler",
-            ],
-        },
+        "gmy_birimler": GMY_BIRIM_MAP,
     },
     "admin": {
         "ad_soyad": "İK Raporlama Admin",
@@ -259,6 +245,27 @@ ANA_TEMALAR = [
     "Çalışma Modeli / Hibrit / İş-Yaşam",
     "Diğer",
 ]
+
+COLUMN_LABELS = {
+    "kayit_id": "Kayıt ID",
+    "kayit_zamani": "Kayıt Zamanı",
+    "donem": "Dönem",
+    "hrbp_kullanici": "İK Sorumlusu",
+    "gmy": "GMY / Domain",
+    "birim": "Birim / Ekip",
+    "katilimci_turu": "Katılımcı Tipi",
+    "calisan_rumuzu": "Katılımcı Kodu / Adı",
+    "calisma_modeli": "Çalışma Modeli",
+    "duygu_durumu": "Duygu Durumu",
+    "ana_tema": "Öne Çıkan Ana Tema",
+    "aksiyon_ihtiyaci": "Aksiyon İhtiyacı",
+    "aksiyon_seviyesi": "Aksiyon Seviyesi",
+    "aksiyon_notu": "Aksiyon Notu",
+    "q_kapanis": "Kapanış / Ek Not",
+    **dict(GORUSME_SORULARI),
+    **dict(IK_BASLIKLARI),
+    **dict(PUAN_BASLIKLARI),
+}
 
 
 def get_gsheet_client():
@@ -472,6 +479,131 @@ def save_record(record: dict) -> tuple[bool, str]:
     new_row = pd.DataFrame([record])
     st.session_state.local_df = pd.concat([st.session_state.local_df, new_row], ignore_index=True)
     return True, "Kayıt demo/oturum verisine eklendi (Google Sheets bağlandığında doğrudan Sheets'e yazılacak)."
+
+
+def build_excel_export(df_raw: pd.DataFrame) -> bytes:
+    bio = io.BytesIO()
+    df_clean = df_raw.copy()
+
+    # Sütun sırasını ve Türkçe başlıklarını düzenle
+    ordered_cols = [c for c in COLUMN_LABELS.keys() if c in df_clean.columns]
+    extra_cols = [c for c in df_clean.columns if c not in ordered_cols]
+    df_clean = df_clean[ordered_cols + extra_cols]
+    df_export = df_clean.rename(columns=COLUMN_LABELS)
+
+    # Birim bazlı özet tablosu
+    puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_raw.columns]
+    ozet_rows = []
+    if not df_raw.empty and "birim" in df_raw.columns:
+        for (gmy_ad, birim_ad), grp in df_raw.groupby(["gmy", "birim"], dropna=False):
+            num_stack = grp[puan_cols].apply(pd.to_numeric, errors="coerce").stack() if puan_cols else pd.Series(dtype=float)
+            ort_skor = round(float(num_stack.mean()), 2) if not num_stack.empty else None
+            aksiyon_sayisi = int((grp["aksiyon_ihtiyaci"] == "Evet").sum()) if "aksiyon_ihtiyaci" in grp.columns else 0
+            olumlu_sayisi = int((grp["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in grp.columns else 0
+            olumsuz_sayisi = int((grp["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in grp.columns else 0
+            ozet_rows.append(
+                {
+                    "GMY / Domain": gmy_ad,
+                    "Birim / Ekip": birim_ad,
+                    "Görüşme Sayısı": len(grp),
+                    "Genel Puan Ortalaması (1-5)": ort_skor,
+                    "Olumlu Görüşme": olumlu_sayisi,
+                    "Olumsuz Görüşme": olumsuz_sayisi,
+                    "Aksiyon İhtiyacı Olan": aksiyon_sayisi,
+                }
+            )
+    df_birim_ozet = pd.DataFrame(ozet_rows) if ozet_rows else pd.DataFrame(
+        columns=["GMY / Domain", "Birim / Ekip", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan"]
+    )
+
+    # Kriter puan ortalamaları tablosu
+    kriter_rows = []
+    for col_k, lbl_k in PUAN_BASLIKLARI:
+        if col_k in df_raw.columns:
+            s_num = pd.to_numeric(df_raw[col_k], errors="coerce").dropna()
+            kriter_rows.append(
+                {
+                    "Değerlendirme Kriteri": lbl_k,
+                    "Puanlanan Kişi Sayısı": int(len(s_num)),
+                    "Ortalama Puan (1-5)": round(float(s_num.mean()), 2) if not s_num.empty else None,
+                    "En Düşük Puan": round(float(s_num.min()), 2) if not s_num.empty else None,
+                    "En Yüksek Puan": round(float(s_num.max()), 2) if not s_num.empty else None,
+                }
+            )
+    df_kriter_ozet = pd.DataFrame(kriter_rows)
+
+    with pd.ExcelWriter(bio, engine="openpyxl") as writer:
+        df_export.to_excel(writer, sheet_name="Görüşme Kayıtları", index=False)
+        df_birim_ozet.to_excel(writer, sheet_name="Birim Bazlı Özet", index=False)
+        df_kriter_ozet.to_excel(writer, sheet_name="Kriter Ortalamaları", index=False)
+
+        wb = writer.book
+        header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+        zebra_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        body_font = Font(name="Calibri", size=10, color="0F172A")
+        thin_side = Side(style="thin", color="CBD5E1")
+        cell_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+
+        for ws_name in wb.sheetnames:
+            ws = wb[ws_name]
+            ws.views.sheetView[0].showGridLines = True
+            ws.freeze_panes = "A2"
+            ws.auto_filter.ref = ws.dimensions
+
+            # Başlık satırı stili
+            ws.row_dimensions[1].height = 30
+            for col_idx in range(1, ws.max_column + 1):
+                cell = ws.cell(row=1, column=col_idx)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                cell.border = cell_border
+
+            # Veri satırları stili
+            for row_idx in range(2, ws.max_row + 1):
+                max_lines = 1
+                for col_idx in range(1, ws.max_column + 1):
+                    cell = ws.cell(row=row_idx, column=col_idx)
+                    cell.font = body_font
+                    cell.border = cell_border
+                    if row_idx % 2 == 0:
+                        cell.fill = zebra_fill
+                    val_str = str(cell.value) if cell.value is not None else ""
+                    if isinstance(cell.value, (int, float)):
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                        if isinstance(cell.value, float):
+                            cell.number_format = "0.00"
+                    else:
+                        cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                        est_lines = max(1, (len(val_str) // 45) + 1)
+                        if est_lines > max_lines:
+                            max_lines = est_lines
+                ws.row_dimensions[row_idx].height = min(90, max(22, max_lines * 15))
+
+            # Sütun genişlikleri
+            for col_idx in range(1, ws.max_column + 1):
+                col_letter = get_column_letter(col_idx)
+                header_text = str(ws.cell(row=1, column=col_idx).value or "")
+                if ws_name == "Görüşme Kayıtları":
+                    if len(header_text) > 35:
+                        ws.column_dimensions[col_letter].width = 42
+                    elif "GMY" in header_text or "Birim" in header_text:
+                        ws.column_dimensions[col_letter].width = 34
+                    elif "Puan" in header_text or "Memnuniyet" in header_text or "Motivasyon" in header_text or "İletişimi" in header_text or "Dengesi" in header_text or "Sıklığı" in header_text or "Değerlendirmesi" in header_text:
+                        ws.column_dimensions[col_letter].width = 18
+                    else:
+                        ws.column_dimensions[col_letter].width = max(16, min(28, len(header_text) + 5))
+                else:
+                    max_len = len(header_text)
+                    for r_i in range(2, ws.max_row + 1):
+                        v_len = len(str(ws.cell(row=r_i, column=col_idx).value or ""))
+                        if v_len > max_len:
+                            max_len = v_len
+                    ws.column_dimensions[col_letter].width = min(48, max(18, max_len + 4))
+
+    bio.seek(0)
+    return bio.getvalue()
 
 
 def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: str) -> bytes:
@@ -1028,11 +1160,13 @@ else:
     if df_all.empty:
         st.info("Henüz kayıt bulunmuyor.")
     else:
-        st.dataframe(df_all, use_container_width=True, hide_index=True)
-        csv_data = df_all.to_csv(index=False).encode("utf-8-sig")
+        df_display = df_all.rename(columns=COLUMN_LABELS)
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        excel_data = build_excel_export(df_all)
         st.download_button(
-            label="Havuzu CSV Olarak İndir",
-            data=csv_data,
-            file_name="izlenim_paylasim_havuz.csv",
-            mime="text/csv",
+            label="📥 Havuzu Excel Olarak İndir (.xlsx)",
+            data=excel_data,
+            file_name=f"Izlenim_Paylasim_Havuz_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
         )
