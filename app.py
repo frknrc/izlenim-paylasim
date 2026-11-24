@@ -8,11 +8,8 @@ from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
 import streamlit as st
 
-# ==============================================================================
-# SAYFA AYARLARI VE SOFTTECH KURUMSAL TEMA
-# ==============================================================================
 st.set_page_config(
-    page_title="Softtech İzlenim Paylaşım Paneli",
+    page_title="İzlenim Paylaşım Paneli",
     page_icon="💡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -62,7 +59,7 @@ st.markdown(
             opacity: 0.92;
             color: #FFFFFF;
         }}
-        .softtech-header {{
+        .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
             border: 1px solid {CARD_BORDER};
             border-left: 5px solid {TEAL};
@@ -70,16 +67,16 @@ st.markdown(
             padding: 1.2rem 1.5rem;
             margin-bottom: 1rem;
         }}
-        .softtech-brand {{
+        .panel-brand {{
             font-size: 1.5rem;
             font-weight: 800;
             letter-spacing: -0.5px;
             color: {TEXT_LIGHT};
         }}
-        .softtech-accent {{
+        .panel-accent {{
             color: {TEAL};
         }}
-        .softtech-purple {{
+        .panel-purple {{
             color: {PURPLE_LIGHT};
         }}
         .metric-card {{
@@ -109,9 +106,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ==============================================================================
-# GMY / BİRİM HİYerarşisi
-# ==============================================================================
 GMY_BIRIM_MAP = {
     "10000014-Genel Müdürlük": [
         "10000114-İnsan Kaynakları",
@@ -178,7 +172,7 @@ GMY_BIRIM_MAP = {
 DEFAULT_USERS = {
     "seyma": {
         "ad_soyad": "Şeyma (İK İş Ortağı)",
-        "sifre": "softtech2026",
+        "sifre": "panel2026",
         "rol": "hrbp",
         "gmy_birimler": {
             "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri": [
@@ -195,7 +189,7 @@ DEFAULT_USERS = {
     },
     "hrbp_ornek": {
         "ad_soyad": "Örnek HRBP",
-        "sifre": "softtech2026",
+        "sifre": "panel2026",
         "rol": "hrbp",
         "gmy_birimler": {
             "10000023-Mevduat, Kredi, Süreç ve Ödemeler": [
@@ -213,16 +207,16 @@ DEFAULT_USERS = {
 }
 
 GORUSME_SORULARI = [
-    ("q01_calisma_hayati", "Softtech'te çalışma hayatın nasıl gidiyor?"),
-    ("q02_guclu_yonler", "Sana göre Softtech'teki olumlu/güçlü yönler neler?"),
+    ("q01_calisma_hayati", "Çalışma hayatın nasıl gidiyor?"),
+    ("q02_guclu_yonler", "Sana göre olumlu/güçlü yönler neler?"),
     ("q03_ekip_rol_tatmin", "Görev aldığın ekip, rolün ve projelerin seni tatmin ediyor, sana katkı sağlıyor mu?"),
     ("q04_ekip_iyilestirme", "Ekibinde sana göre daha iyi olması gereken şeyler neler?"),
     ("q05_motivasyon_arttiran", "Kendi motivasyonunu daha çok arttıracak şeyler neler olabilir? (İş, proje, kariyer vb.)"),
     ("q06_yonetici_geri_bildirim", "Yöneticin gelişimin için zaman ayırıp düzenli geri bildirim verebiliyor mu? Görüşme sıklığı nasıl?"),
     ("q07_ym_verimlilik", "Yetkinlik Merkezi yapısının verimliliğini nasıl değerlendirirsin? (Eğitim, iş süreçleri vb.)"),
     ("q08_gmy_iletisimi", "GMY iletişimi ile ilgili değerlendirmelerin nasıl olur?"),
-    ("q09_vizyon_strateji", "Şirketin sunduğu vizyon ve stratejiyi büyük resimde nasıl değerlendiriyorsun?"),
-    ("q10_degistirmek_istenen", "Softtech'te neyi değiştirmek isterdin?"),
+    ("q09_vizyon_strateji", "Sunulan vizyon ve stratejiyi büyük resimde nasıl değerlendiriyorsun?"),
+    ("q10_degistirmek_istenen", "Neyi değiştirmek isterdin?"),
     ("q11_mevcut_calisma_modeli", "Mevcut çalışma modelinle ilgili ne düşünüyorsun?"),
     ("q12_ilerisi_calisma_modeli", "İlerisi için nasıl bir çalışma modeli olursa daha verimli çalışacağına inanıyorsun?"),
     ("q13_harmony", "Harmony ile ilgili görüşlerin nasıl, çalışma sürecine olan etkisini nasıl değerlendirirsin?"),
@@ -234,11 +228,11 @@ IK_BASLIKLARI = [
     ("ik_kariyer", "İşe Alım ve Kariyer Yönetimi"),
     ("ik_deneyim_marka", "Çalışan Deneyimi ve İşveren Markası Tanıtımı"),
     ("ik_ucret_merkezi", "Ücretlendirme ve Çalışan Merkezi"),
-    ("ik_akademi", "Softtech Akademi"),
+    ("ik_akademi", "Akademi"),
 ]
 
 PUAN_BASLIKLARI = [
-    ("p_softtech_memnuniyet", "Softtech Memnuniyeti"),
+    ("p_genel_memnuniyet", "Genel Memnuniyet"),
     ("p_ekip_motivasyonu", "Ekip Motivasyonu"),
     ("p_kendi_motivasyonu", "Kendi Motivasyonu"),
     ("p_is_yasam_dengesi", "İş Yaşam Dengesi"),
@@ -325,7 +319,7 @@ def get_sample_data() -> pd.DataFrame:
             "ik_ucret_merkezi": "Ücret ve yan hakların piyasa ile uyumlu kalması önemli.",
             "ik_akademi": "Akademi eğitim içerikleri güncel ve pratik.",
             "q_kapanis": "Eklemek istediğim farklı bir konu yok.",
-            "p_softtech_memnuniyet": 4.4,
+            "p_genel_memnuniyet": 4.4,
             "p_ekip_motivasyonu": 4.2,
             "p_kendi_motivasyonu": 4.3,
             "p_is_yasam_dengesi": 3.8,
@@ -372,7 +366,7 @@ def get_sample_data() -> pd.DataFrame:
             "ik_ucret_merkezi": "Prim ve ücret artış süreçlerinde netlik beklentisi var.",
             "ik_akademi": "Teknik eğitimlerin artırılması faydalı olur.",
             "q_kapanis": "Geri bildirimlerin takip edilmesi değerli.",
-            "p_softtech_memnuniyet": 3.7,
+            "p_genel_memnuniyet": 3.7,
             "p_ekip_motivasyonu": 3.6,
             "p_kendi_motivasyonu": 3.5,
             "p_is_yasam_dengesi": 3.1,
@@ -419,7 +413,7 @@ def get_sample_data() -> pd.DataFrame:
             "ik_ucret_merkezi": "Bütçe ve kota netliği önemli.",
             "ik_akademi": "Yurt dışı ve uzmanlık eğitimleri değerli.",
             "q_kapanis": "Çalışan sesinin düzenli toplanması çok kıymetli.",
-            "p_softtech_memnuniyet": 4.3,
+            "p_genel_memnuniyet": 4.3,
             "p_ekip_motivasyonu": 4.4,
             "p_kendi_motivasyonu": 4.2,
             "p_is_yasam_dengesi": 3.7,
@@ -523,7 +517,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
 
         ft = slide.shapes.add_textbox(Inches(0.6), Inches(7.0), Inches(12.1), Inches(0.35))
         fp = ft.text_frame.paragraphs[0]
-        fp.text = f"softtech.com.tr  |  İzlenim Paylaşım Değerlendirmesi  |  Slayt {slide_num}/7"
+        fp.text = f"İzlenim Paylaşım Değerlendirmesi  |  Slayt {slide_num}/7"
         fp.font.size = Pt(9.5)
         fp.font.color.rgb = c_muted
 
@@ -704,8 +698,8 @@ if "user" not in st.session_state:
 if st.session_state.user is None:
     st.markdown(
         """
-        <div class="softtech-header">
-            <div class="softtech-brand"><span class="softtech-accent">&lt;</span> softtech<span class="softtech-accent">.</span> <span class="softtech-purple">|</span> İzlenim Paylaşım Paneli</div>
+        <div class="panel-header">
+            <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> İzlenim Paylaşım Paneli</div>
             <div style="color:#94A3B8; margin-top:0.3rem;">İK İş Ortakları için 1-1 Görüşme Veri Havuzu, Standart Dashboard ve Sunum Üretici</div>
         </div>
         """,
@@ -729,7 +723,7 @@ if st.session_state.user is None:
                 else:
                     st.error("Kullanıcı adı veya şifre hatalı.")
 
-        st.caption("Test hesapları: `seyma` / `softtech2026` veya `admin` / `admin2026`")
+        st.caption("Test hesapları: `seyma` / `panel2026` veya `admin` / `admin2026`")
     st.stop()
 
 
@@ -751,8 +745,8 @@ with st.sidebar:
 
 st.markdown(
     f"""
-    <div class="softtech-header">
-        <div class="softtech-brand"><span class="softtech-accent">&lt;</span> softtech<span class="softtech-accent">.</span> <span class="softtech-purple">|</span> {sayfa}</div>
+    <div class="panel-header">
+        <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> {sayfa}</div>
         <div style="color:#94A3B8; margin-top:0.25rem;">Aktif Kullanıcı: <b>{user['ad_soyad']}</b> &nbsp;•&nbsp; {data_source_label}</div>
     </div>
     """,
@@ -872,8 +866,6 @@ elif sayfa == "Standart Dashboard & Sunum":
     with f1:
         gmy_filter_opts = ["Tümü"] + gmy_options
         sel_gmy_f = st.selectbox("GMY / Domain Filtresi", gmy_filter_opts)
-    with c2:
-        pass
     with f2:
         if sel_gmy_f == "Tümü":
             birim_filter_opts = ["Tümü"] + allowed_birimler
@@ -944,7 +936,7 @@ elif sayfa == "Standart Dashboard & Sunum":
     st.download_button(
         label="📊 Standart Direktör Sunumunu İndir (.pptx)",
         data=pptx_bytes,
-        file_name=f"Softtech_Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
+        file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
         mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         use_container_width=True,
     )
@@ -1041,6 +1033,6 @@ else:
         st.download_button(
             label="Havuzu CSV Olarak İndir",
             data=csv_data,
-            file_name="softtech_izlenim_paylasim_havuz.csv",
+            file_name="izlenim_paylasim_havuz.csv",
             mime="text/csv",
         )
