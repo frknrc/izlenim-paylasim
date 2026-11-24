@@ -1257,7 +1257,7 @@ elif sayfa == "Standart Dashboard & Sunum":
     with f1:
         gmy_filter_opts = ["Tümü"] + gmy_options
         sel_gmy_f = st.selectbox("GMY / Domain Filtresi", gmy_filter_opts)
-    with c2:
+    with f2:
         if sel_gmy_f == "Tümü":
             birim_filter_opts = ["Tümü"] + allowed_birimler
         else:
