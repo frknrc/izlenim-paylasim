@@ -1,4 +1,6 @@
 import io
+import re
+from collections import Counter
 from datetime import date, datetime
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -102,6 +104,13 @@ st.markdown(
             color: {TEAL};
             font-size: 0.8rem;
             margin-top: 0.2rem;
+        }}
+        .detail-box {{
+            background-color: {CARD_DARK};
+            border: 1px solid {CARD_BORDER};
+            border-radius: 10px;
+            padding: 1rem 1.15rem;
+            margin-bottom: 0.85rem;
         }}
     </style>
     """,
@@ -217,6 +226,8 @@ IK_BASLIKLARI = [
     ("ik_akademi", "Akademi"),
 ]
 
+TUM_METIN_SORULARI = GORUSME_SORULARI + IK_BASLIKLARI + [("q_kapanis", "Kapanış / Ek Değerlendirmeler")]
+
 PUAN_BASLIKLARI = [
     ("p_genel_memnuniyet", "Genel Memnuniyet"),
     ("p_ekip_motivasyonu", "Ekip Motivasyonu"),
@@ -266,6 +277,221 @@ COLUMN_LABELS = {
     **dict(IK_BASLIKLARI),
     **dict(PUAN_BASLIKLARI),
 }
+
+NEG_SIGNALS = [
+    "yavaş",
+    "geç",
+    "sorun",
+    "sıkıntı",
+    "eksik",
+    "yük",
+    "yoğun",
+    "zor",
+    "karmaşık",
+    "belirsiz",
+    "yetersiz",
+    "azalt",
+    "kısıt",
+    "olumsuz",
+    "düşük",
+    "problem",
+    "zaman alıyor",
+    "bekleniyor",
+    "iyileşmeye açık",
+    "sadeleştir",
+    "şeffaf olabilir",
+    "karne yükü",
+]
+
+POS_SIGNALS = [
+    "güçlü",
+    "iyi",
+    "olumlu",
+    "memnun",
+    "destekleyici",
+    "başarılı",
+    "verimli",
+    "net",
+    "açık",
+    "kolay",
+    "hızlı",
+    "değerli",
+    "faydalı",
+    "yüksek",
+    "yapıcı",
+    "güven",
+    "ulaşılabilir",
+    "tatmin",
+    "sorun yok",
+    "akıcı",
+]
+
+
+def split_clauses(text: str) -> list[str]:
+    if not text or not isinstance(text, str):
+        return []
+    cleaned = text.strip()
+    if not cleaned:
+        return []
+    parts = re.split(r"[.!?\n;]+|,\s+(?=[A-ZÇĞİÖŞÜa-zçğıöşü]{3,})", cleaned)
+    result = []
+    for p in parts:
+        item = re.sub(r"\s+", " ", p).strip(" -•\t")
+        if len(item) >= 4:
+            result.append(item)
+    return result if result else [cleaned]
+
+
+def classify_clause(clause: str, row_duygu: str = "") -> str:
+    low = clause.lower()
+    pos_hits = sum(1 for w in POS_SIGNALS if w in low)
+    neg_hits = sum(1 for w in NEG_SIGNALS if w in low)
+    if neg_hits > pos_hits:
+        return "olumsuz"
+    if pos_hits > neg_hits:
+        return "olumlu"
+    if row_duygu == "Olumsuz":
+        return "olumsuz"
+    if row_duygu == "Olumlu":
+        return "olumlu"
+    return "olumlu"
+
+
+def summarize_top_points(clauses: list[str], top_n: int = 3) -> list[str]:
+    if not clauses:
+        return []
+    counts = Counter(clauses)
+    ranked = sorted(counts.items(), key=lambda x: (-x[1], -len(x[0])))
+    out = []
+    for ifade, adet in ranked[:top_n]:
+        if adet > 1:
+            out.append(f"{ifade} ({adet} tekrar)")
+        else:
+            out.append(ifade)
+    return out
+
+
+def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
+    """Tüm personel açıklamalarını toplayıp her soru için en çok tekrar eden olumlu ve olumsuz noktaları üretir."""
+    summaries = []
+    for col_key, soru_metni in TUM_METIN_SORULARI:
+        if col_key not in df_source.columns or df_source.empty:
+            continue
+        pos_clauses = []
+        neg_clauses = []
+        yanit_sayisi = 0
+
+        for _, row in df_source.iterrows():
+            raw_val = row.get(col_key, "")
+            if pd.isna(raw_val) or not str(raw_val).strip():
+                continue
+            yanit_sayisi += 1
+            row_duygu = str(row.get("duygu_durumu", "") or "")
+            for c_item in split_clauses(str(raw_val)):
+                yon = classify_clause(c_item, row_duygu)
+                if yon == "olumsuz":
+                    neg_clauses.append(c_item)
+                else:
+                    pos_clauses.append(c_item)
+
+        if yanit_sayisi > 0:
+            summaries.append(
+                {
+                    "soru_kodu": col_key,
+                    "soru": soru_metni,
+                    "yanit_sayisi": yanit_sayisi,
+                    "olumlu_noktalar": summarize_top_points(pos_clauses, top_n=3),
+                    "olumsuz_noktalar": summarize_top_points(neg_clauses, top_n=3),
+                }
+            )
+    return summaries
+
+
+def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
+    """Departman (GMY) geneli ile altındaki her birimi olumlu ve olumsuz yönleriyle ayrıca analiz eder."""
+    if secili_gmy != "Tümü" and "gmy" in df_scoped.columns:
+        df_dept = df_scoped[df_scoped["gmy"] == secili_gmy].copy()
+        hedef_gmy_adlari = [secili_gmy]
+    else:
+        df_dept = df_scoped.copy()
+        hedef_gmy_adlari = (
+            sorted(df_dept["gmy"].dropna().unique().tolist())
+            if not df_dept.empty and "gmy" in df_dept.columns
+            else list(GMY_BIRIM_MAP.keys())
+        )
+
+    dept_pos_all = []
+    dept_neg_all = []
+    text_cols = [k for k, _ in TUM_METIN_SORULARI if k in df_dept.columns]
+
+    for _, row in df_dept.iterrows():
+        row_duygu = str(row.get("duygu_durumu", "") or "")
+        for tc in text_cols:
+            val = row.get(tc, "")
+            if pd.notna(val) and str(val).strip():
+                for c_item in split_clauses(str(val)):
+                    if classify_clause(c_item, row_duygu) == "olumsuz":
+                        dept_neg_all.append(c_item)
+                    else:
+                        dept_pos_all.append(c_item)
+
+    birim_listesi = []
+    for g_ad in hedef_gmy_adlari:
+        katalog_birimler = GMY_BIRIM_MAP.get(g_ad, [])
+        veri_birimleri = (
+            df_dept[df_dept["gmy"] == g_ad]["birim"].dropna().unique().tolist()
+            if not df_dept.empty and "gmy" in df_dept.columns and "birim" in df_dept.columns
+            else []
+        )
+        tum_birimler = []
+        for b in katalog_birimler + veri_birimleri:
+            if b not in tum_birimler:
+                tum_birimler.append(b)
+
+        for b_ad in tum_birimler:
+            df_b = df_dept[df_dept["birim"] == b_ad] if not df_dept.empty and "birim" in df_dept.columns else pd.DataFrame()
+            b_pos = []
+            b_neg = []
+            for _, row in df_b.iterrows():
+                row_duygu = str(row.get("duygu_durumu", "") or "")
+                for tc in text_cols:
+                    val = row.get(tc, "")
+                    if pd.notna(val) and str(val).strip():
+                        for c_item in split_clauses(str(val)):
+                            if classify_clause(c_item, row_duygu) == "olumsuz":
+                                b_neg.append(c_item)
+                            else:
+                                b_pos.append(c_item)
+
+            top_b_pos = summarize_top_points(b_pos, top_n=2)
+            top_b_neg = summarize_top_points(b_neg, top_n=2)
+            olumsuz_kisi = int((df_b["duygu_durumu"] == "Olumsuz").sum()) if not df_b.empty and "duygu_durumu" in df_b.columns else 0
+            aksiyon_kisi = int((df_b["aksiyon_ihtiyaci"] == "Evet").sum()) if not df_b.empty and "aksiyon_ihtiyaci" in df_b.columns else 0
+
+            if df_b.empty:
+                durum_etiketi = "Kayıt Yok"
+            elif top_b_neg or olumsuz_kisi > 0 or aksiyon_kisi > 0:
+                durum_etiketi = "Dikkat / İyileştirme Alanı Var"
+            else:
+                durum_etiketi = "Genel Olumlu / Sorun Görünmüyor"
+
+            birim_listesi.append(
+                {
+                    "gmy": g_ad,
+                    "birim": b_ad,
+                    "gorusme_sayisi": len(df_b),
+                    "durum": durum_etiketi,
+                    "olumlu": top_b_pos or (["Kayıt bulunmuyor"] if df_b.empty else ["Belirgin olumlu ifade yok"]),
+                    "olumsuz": top_b_neg or (["Kayıt bulunmuyor"] if df_b.empty else ["Öne çıkan olumsuz ifade yok"]),
+                }
+            )
+
+    return {
+        "gorusme_sayisi": len(df_dept),
+        "olumlu": summarize_top_points(dept_pos_all, top_n=4) or ["Yeterli yorum bulunmuyor"],
+        "olumsuz": summarize_top_points(dept_neg_all, top_n=4) or ["Öne çıkan olumsuz ifade bulunmuyor"],
+        "birimler": birim_listesi,
+    }
 
 
 def get_gsheet_client():
@@ -485,13 +711,11 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
     bio = io.BytesIO()
     df_clean = df_raw.copy()
 
-    # Sütun sırasını ve Türkçe başlıklarını düzenle
     ordered_cols = [c for c in COLUMN_LABELS.keys() if c in df_clean.columns]
     extra_cols = [c for c in df_clean.columns if c not in ordered_cols]
     df_clean = df_clean[ordered_cols + extra_cols]
     df_export = df_clean.rename(columns=COLUMN_LABELS)
 
-    # Birim bazlı özet tablosu
     puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_raw.columns]
     ozet_rows = []
     if not df_raw.empty and "birim" in df_raw.columns:
@@ -516,7 +740,6 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
         columns=["GMY / Domain", "Birim / Ekip", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan"]
     )
 
-    # Kriter puan ortalamaları tablosu
     kriter_rows = []
     for col_k, lbl_k in PUAN_BASLIKLARI:
         if col_k in df_raw.columns:
@@ -551,7 +774,6 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
             ws.freeze_panes = "A2"
             ws.auto_filter.ref = ws.dimensions
 
-            # Başlık satırı stili
             ws.row_dimensions[1].height = 30
             for col_idx in range(1, ws.max_column + 1):
                 cell = ws.cell(row=1, column=col_idx)
@@ -560,7 +782,6 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.border = cell_border
 
-            # Veri satırları stili
             for row_idx in range(2, ws.max_row + 1):
                 max_lines = 1
                 for col_idx in range(1, ws.max_column + 1):
@@ -581,7 +802,6 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                             max_lines = est_lines
                 ws.row_dimensions[row_idx].height = min(90, max(22, max_lines * 15))
 
-            # Sütun genişlikleri
             for col_idx in range(1, ws.max_column + 1):
                 col_letter = get_column_letter(col_idx)
                 header_text = str(ws.cell(row=1, column=col_idx).value or "")
@@ -590,7 +810,7 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                         ws.column_dimensions[col_letter].width = 42
                     elif "GMY" in header_text or "Birim" in header_text:
                         ws.column_dimensions[col_letter].width = 34
-                    elif "Puan" in header_text or "Memnuniyet" in header_text or "Motivasyon" in header_text or "İletişimi" in header_text or "Dengesi" in header_text or "Sıklığı" in header_text or "Değerlendirmesi" in header_text:
+                    elif any(k in header_text for k in ["Memnuniyet", "Motivasyon", "İletişimi", "Dengesi", "Sıklığı", "Değerlendirmesi"]):
                         ws.column_dimensions[col_letter].width = 18
                     else:
                         ws.column_dimensions[col_letter].width = max(16, min(28, len(header_text) + 5))
@@ -625,7 +845,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         fill.solid()
         fill.fore_color.rgb = color
 
-    def add_header(slide, slide_num: int, title: str, subtitle: str = ""):
+    def add_header(slide, slide_num: int, total_slides: int, title: str, subtitle: str = ""):
         set_bg(slide)
         bar = slide.shapes.add_shape(1, Inches(0.6), Inches(0.45), Inches(0.12), Inches(0.55))
         bar.fill.solid()
@@ -649,11 +869,11 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
 
         ft = slide.shapes.add_textbox(Inches(0.6), Inches(7.0), Inches(12.1), Inches(0.35))
         fp = ft.text_frame.paragraphs[0]
-        fp.text = f"İzlenim Paylaşım Değerlendirmesi  |  Slayt {slide_num}/7"
+        fp.text = f"İzlenim Paylaşım Değerlendirmesi  |  Slayt {slide_num}/{total_slides}"
         fp.font.size = Pt(9.5)
         fp.font.color.rgb = c_muted
 
-    def add_card(slide, left, top, width, height, heading, body_lines, accent=c_teal):
+    def add_card(slide, left, top, width, height, heading, body_lines, accent=c_teal, font_pt=11.0):
         shp = slide.shapes.add_shape(1, Inches(left), Inches(top), Inches(width), Inches(height))
         shp.fill.solid()
         shp.fill.fore_color.rgb = c_card
@@ -668,31 +888,42 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
 
         p0 = tf.paragraphs[0]
         p0.text = heading
-        p0.font.size = Pt(14)
+        p0.font.size = Pt(13.5)
         p0.font.bold = True
         p0.font.color.rgb = accent
-        p0.space_after = Pt(6)
+        p0.space_after = Pt(5)
 
         for line in body_lines:
             p = tf.add_paragraph()
             p.text = f"• {line}" if not line.startswith("•") else line
-            p.font.size = Pt(11.5)
+            p.font.size = Pt(font_pt)
             p.font.color.rgb = c_white
-            p.space_after = Pt(4)
+            p.space_after = Pt(3.5)
 
+    soru_ozetleri = analyze_questions_across_pool(df_filtered)
+    soru_slayt_gruplari = [soru_ozetleri[i : i + 2] for i in range(0, len(soru_ozetleri), 2)]
+    dept_analiz = analyze_department_and_units(df_filtered, secili_gmy)
+    birim_gruplari = [dept_analiz["birimler"][i : i + 4] for i in range(0, len(dept_analiz["birimler"]), 4)]
+
+    total_slides = 5 + len(soru_slayt_gruplari) + max(1, len(birim_gruplari))
+    slide_counter = 1
+
+    # 1. Yönetici Özeti
     n_kisi = len(df_filtered)
-    birim_sayisi = df_filtered["birim"].nunique() if not df_filtered.empty else 0
-
+    birim_sayisi = df_filtered["birim"].nunique() if not df_filtered.empty and "birim" in df_filtered.columns else 0
     puan_ort = {}
     for col, label in PUAN_BASLIKLARI:
-        if col in df_filtered.columns and not df_filtered[col].dropna().empty:
-            puan_ort[label] = round(float(df_filtered[col].dropna().mean()), 2)
+        if col in df_filtered.columns:
+            s_num = pd.to_numeric(df_filtered[col], errors="coerce").dropna()
+            if not s_num.empty:
+                puan_ort[label] = round(float(s_num.mean()), 2)
 
     en_yuksek = sorted(puan_ort.items(), key=lambda x: x[1], reverse=True)[:3]
     en_dusuk = sorted(puan_ort.items(), key=lambda x: x[1])[:3]
 
     s1 = prs.slides.add_slide(blank_layout)
-    add_header(s1, 1, "Executive Summary", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s1, slide_counter, total_slides, "Executive Summary", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    slide_counter += 1
     add_card(
         s1,
         0.6,
@@ -714,8 +945,10 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         c_purple,
     )
 
+    # 2. Görüşme Kapsamı
     s2 = prs.slides.add_slide(blank_layout)
-    add_header(s2, 2, "Görüşme Kapsamı", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s2, slide_counter, total_slides, "Görüşme Kapsamı", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    slide_counter += 1
     modeller = (
         df_filtered["calisma_modeli"].value_counts().to_dict()
         if "calisma_modeli" in df_filtered.columns and not df_filtered.empty
@@ -731,7 +964,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         [
             f"Toplam Görüşülen Kişi: {n_kisi}",
             f"Kapsanan Birim Sayısı: {birim_sayisi}",
-            f"Aksiyon İhtiyacı Olan Kayıt: {int((df_filtered['aksiyon_ihtiyaci'] == 'Evet').sum()) if 'aksiyon_ihtiyaci' in df_filtered.columns else 0}",
+            f"Aksiyon İhtiyacı Olan Kayıt: {int((df_filtered['aksiyon_ihtiyaci'] == 'Evet').sum()) if 'aksiyon_ihtiyaci' in df_filtered.columns and not df_filtered.empty else 0}",
         ],
         c_teal,
     )
@@ -746,40 +979,105 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         c_purple,
     )
 
+    # 3. Genel Değerlendirme Puanları
     s3 = prs.slides.add_slide(blank_layout)
-    add_header(s3, 3, "Genel Değerlendirme (1-5 Puan Ortalamaları)", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s3, slide_counter, total_slides, "Genel Değerlendirme (1-5 Puan Ortalamaları)", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    slide_counter += 1
     tum_puanlar = [f"{k}: {v}" for k, v in sorted(puan_ort.items(), key=lambda x: x[1], reverse=True)]
     yarim = (len(tum_puanlar) + 1) // 2
     add_card(s3, 0.6, 1.35, 5.9, 5.2, "Kriter Ortalamaları (1/2)", tum_puanlar[:yarim] or ["Veri yok"], c_teal)
     add_card(s3, 6.8, 1.35, 5.9, 5.2, "Kriter Ortalamaları (2/2)", tum_puanlar[yarim:] or ["Veri yok"], c_purple)
 
-    s4 = prs.slides.add_slide(blank_layout)
-    add_header(s4, 4, "Birim Bazlı Karşılaştırma", f"{secili_gmy}  |  Dönem: {secili_donem}")
-    birim_ozet = []
-    if not df_filtered.empty:
-        num_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_filtered.columns]
-        for b_adi, g in df_filtered.groupby("birim"):
-            ort_val = round(float(g[num_cols].stack().mean()), 2) if num_cols and not g[num_cols].stack().empty else 0.0
-            birim_ozet.append(f"{b_adi}: {len(g)} görüşme | Ort. Puan: {ort_val}")
-    add_card(s4, 0.6, 1.35, 12.1, 5.2, "Birim Bazlı Görüşme ve Ortalama Skor Özeti", birim_ozet or ["Kayıt bulunmuyor"], c_teal)
+    # 4. Her Soru İçin Tüm Açıklamalardan Çıkarılan En Çok Tekrar Eden Olumlu / Olumsuz Noktalar
+    if soru_slayt_gruplari:
+        for grp_idx, grup in enumerate(soru_slayt_gruplari, start=1):
+            s_q = prs.slides.add_slide(blank_layout)
+            add_header(
+                s_q,
+                slide_counter,
+                total_slides,
+                f"Soru Bazlı Tekrar Eden Olumlu & Olumsuz Noktalar ({grp_idx}/{len(soru_slayt_gruplari)})",
+                f"{secili_gmy}  |  Dönem: {secili_donem}",
+            )
+            slide_counter += 1
+            for slot_i, s_item in enumerate(grup):
+                top_y = 1.32 + slot_i * 2.75
+                pos_str = " ; ".join(s_item["olumlu_noktalar"]) if s_item["olumlu_noktalar"] else "Öne çıkan olumlu ifade yok"
+                neg_str = " ; ".join(s_item["olumsuz_noktalar"]) if s_item["olumsuz_noktalar"] else "Öne çıkan olumsuz ifade yok"
+                add_card(
+                    s_q,
+                    0.6,
+                    top_y,
+                    12.1,
+                    2.55,
+                    f"{s_item['soru']}  ({s_item['yanit_sayisi']} yanıt)",
+                    [
+                        f"En Çok Tekrar Eden Olumlu Noktalar: {pos_str}",
+                        f"En Çok Tekrar Eden Olumsuz Noktalar: {neg_str}",
+                    ],
+                    c_teal if slot_i % 2 == 0 else c_purple,
+                    font_pt=10.5,
+                )
+    else:
+        s_q = prs.slides.add_slide(blank_layout)
+        add_header(s_q, slide_counter, total_slides, "Soru Bazlı Olumlu & Olumsuz Noktalar", f"{secili_gmy}  |  Dönem: {secili_donem}")
+        slide_counter += 1
+        add_card(s_q, 0.6, 1.35, 12.1, 5.2, "Soru Açıklamaları", ["Seçili kapsamda yanıtlanmış soru açıklaması bulunmuyor."], c_teal)
 
-    s5 = prs.slides.add_slide(blank_layout)
-    add_header(s5, 5, "Çalışan Sesi (Voice of Employee)", f"{secili_gmy}  |  Dönem: {secili_donem}")
-    guclu_yorumlar = (
-        df_filtered["q02_guclu_yonler"].dropna().astype(str).str.strip().loc[lambda s: s != ""].head(4).tolist()
-        if "q02_guclu_yonler" in df_filtered.columns
-        else []
+    # 5. Departman Geneli Olumlu & Olumsuz Değerlendirme
+    s_dept = prs.slides.add_slide(blank_layout)
+    add_header(
+        s_dept,
+        slide_counter,
+        total_slides,
+        "Departman (GMY) Geneli — Olumlu & Olumsuz Değerlendirme",
+        f"{secili_gmy}  |  Görüşme Sayısı: {dept_analiz['gorusme_sayisi']}  |  Dönem: {secili_donem}",
     )
-    degisim_yorumlar = (
-        df_filtered["q10_degistirmek_istenen"].dropna().astype(str).str.strip().loc[lambda s: s != ""].head(4).tolist()
-        if "q10_degistirmek_istenen" in df_filtered.columns
-        else []
-    )
-    add_card(s5, 0.6, 1.35, 5.9, 5.2, "Güçlü Yönlere Dair İfadeler", guclu_yorumlar or ["Yorum bulunmuyor"], c_teal)
-    add_card(s5, 6.8, 1.35, 5.9, 5.2, "Değişim / Gelişim İfadeleri", degisim_yorumlar or ["Yorum bulunmuyor"], c_purple)
+    slide_counter += 1
+    add_card(s_dept, 0.6, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumlu Yönler", dept_analiz["olumlu"], c_teal)
+    add_card(s_dept, 6.8, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumsuz Yönler", dept_analiz["olumsuz"], c_purple)
 
+    # 6. Birim Bazlı Olumlu & Olumsuz Kırılım (Tek Birimde Sorun Olsa Bile Net Görünür)
+    if birim_gruplari:
+        for b_idx, b_grp in enumerate(birim_gruplari, start=1):
+            s_b = prs.slides.add_slide(blank_layout)
+            add_header(
+                s_b,
+                slide_counter,
+                total_slides,
+                f"Birim Bazlı Olumlu & Olumsuz Kırılım ({b_idx}/{len(birim_gruplari)})",
+                f"{secili_gmy}  |  Dönem: {secili_donem}",
+            )
+            slide_counter += 1
+            for idx_in_page, b_item in enumerate(b_grp):
+                col_x = 0.6 if idx_in_page % 2 == 0 else 6.8
+                row_y = 1.32 + (idx_in_page // 2) * 2.72
+                b_pos_txt = " / ".join(b_item["olumlu"])
+                b_neg_txt = " / ".join(b_item["olumsuz"])
+                add_card(
+                    s_b,
+                    col_x,
+                    row_y,
+                    5.9,
+                    2.52,
+                    f"{b_item['birim']} ({b_item['gorusme_sayisi']} görüşme — {b_item['durum']})",
+                    [
+                        f"Olumlu: {b_pos_txt}",
+                        f"Olumsuz: {b_neg_txt}",
+                    ],
+                    c_purple if "Dikkat" in b_item["durum"] else c_teal,
+                    font_pt=10.0,
+                )
+    else:
+        s_b = prs.slides.add_slide(blank_layout)
+        add_header(s_b, slide_counter, total_slides, "Birim Bazlı Olumlu & Olumsuz Kırılım", f"{secili_gmy}  |  Dönem: {secili_donem}")
+        slide_counter += 1
+        add_card(s_b, 0.6, 1.35, 12.1, 5.2, "Birim Kırılımı", ["Seçili kapsamda birim kaydı bulunmuyor."], c_teal)
+
+    # 7. Temalar ve Duygu Dağılımı
     s6 = prs.slides.add_slide(blank_layout)
-    add_header(s6, 6, "Öne Çıkan Temalar ve Duygu Dağılımı", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s6, slide_counter, total_slides, "Öne Çıkan Temalar ve Duygu Dağılımı", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    slide_counter += 1
     temalar = (
         [f"{k}: {v}" for k, v in df_filtered["ana_tema"].value_counts().head(6).items()]
         if "ana_tema" in df_filtered.columns and not df_filtered.empty
@@ -793,11 +1091,12 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     add_card(s6, 0.6, 1.35, 5.9, 5.2, "Öne Çıkan Ana Temalar", temalar, c_teal)
     add_card(s6, 6.8, 1.35, 5.9, 5.2, "Genel Duygu Dağılımı", duygular, c_purple)
 
+    # 8. İK Önerileri ve Aksiyon Planı
     s7 = prs.slides.add_slide(blank_layout)
-    add_header(s7, 7, "İK Önerileri ve Aksiyon Planı", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s7, slide_counter, total_slides, "İK Önerileri ve Aksiyon Planı", f"{secili_gmy}  |  Dönem: {secili_donem}")
     aksiyonlar = (
         df_filtered[df_filtered["aksiyon_ihtiyaci"] == "Evet"]
-        if "aksiyon_ihtiyaci" in df_filtered.columns
+        if "aksiyon_ihtiyaci" in df_filtered.columns and not df_filtered.empty
         else pd.DataFrame()
     )
     aksiyon_satirlari = []
@@ -1154,6 +1453,47 @@ elif sayfa == "Standart Dashboard & Sunum":
                     height=205,
                 )
                 st.plotly_chart(fig_duy, use_container_width=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("Departman Geneli & Birim Bazlı Olumlu / Olumsuz Kırılım")
+        dept_res = analyze_department_and_units(df_view, sel_gmy_f)
+
+        d_col1, d_col2 = st.columns(2)
+        with d_col1:
+            st.markdown("**Departman Geneli — En Çok Tekrar Eden Olumlu Yönler**")
+            for item in dept_res["olumlu"]:
+                st.markdown(f"- {item}")
+        with d_col2:
+            st.markdown("**Departman Geneli — En Çok Tekrar Eden Olumsuz Yönler**")
+            for item in dept_res["olumsuz"]:
+                st.markdown(f"- {item}")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        for b_item in dept_res["birimler"]:
+            st.markdown(
+                f"""
+                <div class="detail-box">
+                    <div style="font-weight:700; color:{TEAL}; margin-bottom:0.35rem;">
+                        {b_item['birim']} &nbsp;•&nbsp; {b_item['gorusme_sayisi']} Görüşme &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{b_item['durum']}</span>
+                    </div>
+                    <div><b>Olumlu:</b> {" / ".join(b_item["olumlu"])}</div>
+                    <div><b>Olumsuz:</b> {" / ".join(b_item["olumsuz"])}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("Her Soru İçin Tüm Açıklamalardan Seçilen En Çok Tekrar Eden Noktalar")
+        soru_ozet_list = analyze_questions_across_pool(df_view)
+        for s_oz in soru_ozet_list:
+            with st.expander(f"{s_oz['soru']} ({s_oz['yanit_sayisi']} yanıt)"):
+                st.markdown("**En Çok Tekrar Eden Olumlu Noktalar:**")
+                for p_txt in s_oz["olumlu_noktalar"] or ["Öne çıkan olumlu ifade yok"]:
+                    st.markdown(f"- {p_txt}")
+                st.markdown("**En Çok Tekrar Eden Olumsuz Noktalar:**")
+                for n_txt in s_oz["olumsuz_noktalar"] or ["Öne çıkan olumsuz ifade yok"]:
+                    st.markdown(f"- {n_txt}")
 
 else:
     st.subheader("Kayıt Havuzu")
