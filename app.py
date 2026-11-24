@@ -1,4 +1,6 @@
 import io
+import json
+import os
 import re
 from collections import Counter
 from datetime import date, datetime
@@ -372,7 +374,6 @@ def summarize_top_points(clauses: list[str], top_n: int = 3) -> list[str]:
 
 
 def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
-    """Tüm personel açıklamalarını toplayıp her soru için en çok tekrar eden olumlu ve olumsuz noktaları üretir."""
     summaries = []
     for col_key, soru_metni in TUM_METIN_SORULARI:
         if col_key not in df_source.columns or df_source.empty:
@@ -408,7 +409,6 @@ def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
 
 
 def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
-    """Departman (GMY) geneli ile altındaki her birimi olumlu ve olumsuz yönleriyle ayrıca analiz eder."""
     if secili_gmy != "Tümü" and "gmy" in df_scoped.columns:
         df_dept = df_scoped[df_scoped["gmy"] == secili_gmy].copy()
         hedef_gmy_adlari = [secili_gmy]
@@ -515,151 +515,114 @@ def get_gsheet_client():
         return None, None
 
 
+def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
+    all_pairs = [(g, b) for g, bs in GMY_BIRIM_MAP.items() for b in bs]
+
+    def _clean(v):
+        if v is None:
+            return ""
+        return " ".join(str(v).split()).strip()
+
+    def _score(v):
+        if v is None or v == "":
+            return None
+        try:
+            val = float(v)
+            return round(val, 2) if 1.0 <= val <= 5.0 else None
+        except Exception:
+            return None
+
+    rows_out = []
+    for idx, r in enumerate(records):
+        g_mapped, b_mapped = all_pairs[idx % len(all_pairs)]
+        mem = _score(r.get("st Memnuniyeti"))
+        if mem is None:
+            duygu = "Nötr"
+        elif mem >= 4.0:
+            duygu = "Olumlu"
+        elif mem < 3.0:
+            duygu = "Olumsuz"
+        else:
+            duygu = "Nötr"
+
+        q10_txt = _clean(r.get("st'te neyi değiştirmek isterdin?"))
+        aksiyon_var = (
+            "Evet"
+            if (q10_txt and len(q10_txt) > 12 and "aklıma" not in q10_txt.lower() and "yorum yapamıcam" not in q10_txt.lower())
+            else "Hayır"
+        )
+        yz_yorum = _clean(r.get("Yapay Zeka Kullanım Sıklığı Yorum(CodeMantis, Amigo, Asistan vb.)"))
+        kapanis_txt = _clean(r.get("Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?"))
+        if yz_yorum:
+            kapanis_txt = f"{kapanis_txt} | YZ Yorum: {yz_yorum}".strip(" |")
+
+        rows_out.append(
+            {
+                "kayit_id": f"2026-{r.get('Sicil', 1001 + idx)}",
+                "kayit_zamani": f"{_clean(r.get('Görüşme Tarihi (Ay/Gün/Yıl)')) or '2026-06-04'} 10:00",
+                "donem": "2026 - 2. Dönem",
+                "hrbp_kullanici": "seyma",
+                "gmy": g_mapped,
+                "birim": b_mapped,
+                "katilimci_turu": "Çalışan",
+                "calisan_rumuzu": f"{_clean(r.get('Ad Soyad')) or f'Çalışan {idx+1}'} ({_clean(r.get('Birim')) or b_mapped.split('-', 1)[-1]})",
+                "calisma_modeli": "Hibrit",
+                "duygu_durumu": duygu,
+                "ana_tema": "Çalışma Modeli / Hibrit / İş-Yaşam"
+                if any(w in q10_txt.lower() for w in ["uzaktan", "remote", "ofis", "çalışma"])
+                else "Güven ve Kültür",
+                "aksiyon_ihtiyaci": aksiyon_var,
+                "aksiyon_seviyesi": "Birim / YM" if aksiyon_var == "Evet" else "Yok",
+                "aksiyon_notu": q10_txt if aksiyon_var == "Evet" else "",
+                "q01_calisma_hayati": _clean(r.get("st'te çalışma hayatın nasıl gidiyor?")),
+                "q02_guclu_yonler": _clean(r.get("Sana göre st’teki olumlu/güçlü yönler neler?")),
+                "q03_ekip_rol_tatmin": _clean(r.get("Görev aldığın ekip, rolün ve projelerin seni tatmin ediyor, sana katkı sağlıyor mu?")),
+                "q04_ekip_iyilestirme": _clean(r.get("Ekibinde sana göre daha iyi olması gereken şeyler neler?")),
+                "q05_motivasyon_arttiran": _clean(r.get("Kendi motivasyonunu daha çok arttıracak şeyler neler olabilir? (İş, proje, kariyer vb.)")),
+                "q06_yonetici_geri_bildirim": _clean(r.get("Yöneticin gelişimin için zaman ayırıp düzenli geri bildirim verebiliyor mu? Görüşmenin içeriği beklentini karşılıyor mu? (1.Yönetici, varsa YHL, Direktör)")),
+                "q07_ym_verimlilik": _clean(r.get("Yetkinlik Merkezi yapısının verimliliğini nasıl değerlendirirsin? (Eğitim, iş süreçlerine katkı, matris yapı vb.)")),
+                "q08_gmy_iletisimi": _clean(r.get("GMY iletişimi ile ilgili değerlendirmelerin nasıl olur?")),
+                "q09_vizyon_strateji": _clean(r.get("Şirketin sunduğu vizyon ve stratejiyi büyük resimde nasıl değerlendiriyorsun?")),
+                "q10_degistirmek_istenen": q10_txt,
+                "q11_mevcut_calisma_modeli": _clean(r.get("Mevcut çalışma modelinle ilgili ne düşünüyorsun?")),
+                "q12_ilerisi_calisma_modeli": _clean(r.get("İlerisi için nasıl bir çalışma modeli olursa daha verimli çalışacağına inanıyorsun?")),
+                "q13_harmony": _clean(r.get("Harmony ile ilgili görüşlerin nasıl, çalışma sürecine olan etkisini nasıl değerlendirirsin?")),
+                "q14_toplandigimiza_degsin": _clean(r.get('"Toplandığımıza Değsin" temasının ne kadar işlendiğini düşünüyorsun?')),
+                "q15_karar_alma_surecleri": _clean(r.get("Karar alma süreçlerini hem ekip içi işleyişler hem de üst yönetim seviyesinde nasıl değerlendirirsin?")),
+                "ik_kariyer": _clean(r.get("İşe Alım ve Kariyer Yönetimi")),
+                "ik_deneyim_marka": _clean(r.get("Çalışan Deneyimi ve İşveren Markası Tanıtımı")),
+                "ik_ucret_merkezi": _clean(r.get("Ücretlendirme ve Çalışan Merkezi")),
+                "ik_akademi": _clean(r.get("st Akademi")),
+                "q_kapanis": kapanis_txt,
+                "p_genel_memnuniyet": _score(r.get("st Memnuniyeti")),
+                "p_ekip_motivasyonu": _score(r.get("Ekip Motivasyonu")),
+                "p_kendi_motivasyonu": _score(r.get("Kendi Motivasyonu")),
+                "p_is_yasam_dengesi": _score(r.get("İş Yaşam Dengesi")),
+                "p_1_yonetici_iletisimi": _score(r.get("1.Yönetici İletişimi")),
+                "p_ym_degerlendirme": _score(r.get("Yetkinlik Merkezi Değerlendirmesi")),
+                "p_direktor_iletisimi": _score(r.get("Direktör İletişimi")),
+                "p_gmy_iletisimi": _score(r.get("GMY İletişimi")),
+                "p_ucret_yan_hak": _score(r.get("Ücret Yan Haklar Motivasyonu")),
+                "p_ik_iletisimi": _score(r.get("İK İletişimi/Çalışmaları")),
+                "p_yz_kullanim": _score(r.get("Yapay Zeka Kullanım Sıklığı(CodeMantis, Amigo, Asistan vb.)")),
+            }
+        )
+    return pd.DataFrame(rows_out)
+
+
 def get_sample_data() -> pd.DataFrame:
-    rows = [
-        {
-            "kayit_id": "2026-001",
-            "kayit_zamani": "2026-10-12 10:30",
-            "donem": "2026 - 2. Dönem",
-            "hrbp_kullanici": "seyma",
-            "gmy": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
-            "birim": "10000474-Kurumsal Uygulamalar",
-            "katilimci_turu": "Çalışan",
-            "calisan_rumuzu": "Çalışan #01",
-            "calisma_modeli": "Hibrit",
-            "duygu_durumu": "Olumlu",
-            "ana_tema": "Güven ve Kültür",
-            "aksiyon_ihtiyaci": "Hayır",
-            "aksiyon_seviyesi": "Yok",
-            "aksiyon_notu": "",
-            "q01_calisma_hayati": "Ekip içi iletişim çok güçlü, günlük iş akışı düzenli ilerliyor.",
-            "q02_guclu_yonler": "Ulaşılabilir İK, güvenli çalışma ortamı ve destekleyici ekip kültürü.",
-            "q03_ekip_rol_tatmin": "Sorumluluklarım net, yeni teknolojiler deneme şansı buluyorum.",
-            "q04_ekip_iyilestirme": "Yoğun sprint dönemlerinde toplantı sürelerinin daha kısa tutulması.",
-            "q05_motivasyon_arttiran": "Net kariyer patikası ve eğitim olanakları.",
-            "q06_yonetici_geri_bildirim": "Yöneticim düzenli geri bildirim veriyor ve gelişimimi destekliyor.",
-            "q07_ym_verimlilik": "Mimari ve proje yönetim YM desteği faydalı bulunuyor.",
-            "q08_gmy_iletisimi": "GMY bilgilendirmeleri açık ve erişilebilir.",
-            "q09_vizyon_strateji": "Dijitalleşme ve yapay zeka odağı büyük resimde anlamlı.",
-            "q10_degistirmek_istenen": "Onay ve karar süreçlerinin bazı adımlarının hızlanması.",
-            "q11_mevcut_calisma_modeli": "Mevcut hibrit düzenden memnunum.",
-            "q12_ilerisi_calisma_modeli": "Esnek hibrit yapının korunması verimliliği artırır.",
-            "q13_harmony": "Kriterlerin netleşmesiyle daha sağlıklı ölçülebilir.",
-            "q14_toplandigimiza_degsin": "Gündemi net toplantılarda verim yüksek.",
-            "q15_karar_alma_surecleri": "Birim içi hızlı, üst düzeyde zaman zaman daha yavaş.",
-            "ik_kariyer": "Kariyer gelişim görüşmeleri yapıcı ilerliyor.",
-            "ik_deneyim_marka": "Şirket içi etkinlikler ve kültür olumlu.",
-            "ik_ucret_merkezi": "Ücret ve yan hakların piyasa ile uyumlu kalması önemli.",
-            "ik_akademi": "Akademi eğitim içerikleri güncel ve pratik.",
-            "q_kapanis": "Eklemek istediğim farklı bir konu yok.",
-            "p_genel_memnuniyet": 4.4,
-            "p_ekip_motivasyonu": 4.2,
-            "p_kendi_motivasyonu": 4.3,
-            "p_is_yasam_dengesi": 3.8,
-            "p_1_yonetici_iletisimi": 4.5,
-            "p_ym_degerlendirme": 3.6,
-            "p_direktor_iletisimi": 4.2,
-            "p_gmy_iletisimi": 4.0,
-            "p_ucret_yan_hak": 3.4,
-            "p_ik_iletisimi": 4.4,
-            "p_yz_kullanim": 4.1,
-        },
-        {
-            "kayit_id": "2026-002",
-            "kayit_zamani": "2026-10-15 14:15",
-            "donem": "2026 - 2. Dönem",
-            "hrbp_kullanici": "seyma",
-            "gmy": "10000028-Teknoloji, Yapay Zeka ve Sürekli İyileştirme",
-            "birim": "10000464-İş Analizi Yetkinlik Merkezi",
-            "katilimci_turu": "Çalışan",
-            "calisan_rumuzu": "Çalışan #02",
-            "calisma_modeli": "Hibrit",
-            "duygu_durumu": "Olumsuz",
-            "ana_tema": "Harmony ve Karne Etkisi",
-            "aksiyon_ihtiyaci": "Evet",
-            "aksiyon_seviyesi": "Birim / YM",
-            "aksiyon_notu": "Harmony metriklerinin saha iş yüküyle uyumu gözden geçirilmeli.",
-            "q01_calisma_hayati": "İş yoğunluğu dönem dönem artıyor, önceliklendirme kritik.",
-            "q02_guclu_yonler": "Ekip arkadaşlığı ve teknik bilgi paylaşımı.",
-            "q03_ekip_rol_tatmin": "Farklı domainlerle çalışmak perspektif kazandırıyor.",
-            "q04_ekip_iyilestirme": "İş birimleriyle erken aşamada kapsam netleştirme.",
-            "q05_motivasyon_arttiran": "Emek karşılığının net görünürlüğü ve eğitim bütçesi.",
-            "q06_yonetici_geri_bildirim": "Düzenli görüşmeler yapılıyor.",
-            "q07_ym_verimlilik": "YM süreçlerinde rol ve sorumlulukların netleşmesi bekleniyor.",
-            "q08_gmy_iletisimi": "Düzenli paylaşımlar yapılıyor.",
-            "q09_vizyon_strateji": "YZ dönüşümü doğru yönde ilerliyor.",
-            "q10_degistirmek_istenen": "Harmony ölçüm ve karne yükünün azaltılması.",
-            "q11_mevcut_calisma_modeli": "Hibrit model uygun ancak yoğun dönemlerde esneklik önemli.",
-            "q12_ilerisi_calisma_modeli": "Çıktı odaklı hibrit model.",
-            "q13_harmony": "Operasyonel yük yarattığı noktalar var.",
-            "q14_toplandigimiza_degsin": "Bazı toplantılar aksiyon odaklı değil.",
-            "q15_karar_alma_surecleri": "Kararların netleşmesi zaman alabiliyor.",
-            "ik_kariyer": "Kariyer adımları daha şeffaf olabilir.",
-            "ik_deneyim_marka": "İletişim kanalları aktif.",
-            "ik_ucret_merkezi": "Prim ve ücret artış süreçlerinde netlik beklentisi var.",
-            "ik_akademi": "Teknik eğitimlerin artırılması faydalı olur.",
-            "q_kapanis": "Geri bildirimlerin takip edilmesi değerli.",
-            "p_genel_memnuniyet": 3.7,
-            "p_ekip_motivasyonu": 3.6,
-            "p_kendi_motivasyonu": 3.5,
-            "p_is_yasam_dengesi": 3.1,
-            "p_1_yonetici_iletisimi": 4.0,
-            "p_ym_degerlendirme": 3.0,
-            "p_direktor_iletisimi": 3.8,
-            "p_gmy_iletisimi": 3.7,
-            "p_ucret_yan_hak": 2.9,
-            "p_ik_iletisimi": 4.1,
-            "p_yz_kullanim": 3.8,
-        },
-        {
-            "kayit_id": "2026-003",
-            "kayit_zamani": "2026-10-18 11:00",
-            "donem": "2026 - 2. Dönem",
-            "hrbp_kullanici": "seyma",
-            "gmy": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
-            "birim": "10000475-Mobil Uygulamalar",
-            "katilimci_turu": "Direktör",
-            "calisan_rumuzu": "Direktör #01",
-            "calisma_modeli": "Hibrit",
-            "duygu_durumu": "Olumlu",
-            "ana_tema": "Karar Süreçleri ve Bilgi Akışı",
-            "aksiyon_ihtiyaci": "Evet",
-            "aksiyon_seviyesi": "GMY / Üst Yönetim",
-            "aksiyon_notu": "Süreç değişikliklerinde önce direktörlere ön bilgilendirme yapılması.",
-            "q01_calisma_hayati": "Ekip performansı ve iş birliği güçlü.",
-            "q02_guclu_yonler": "Güven kültürü, ulaşılabilir İK ve güçlü teknik kadro.",
-            "q03_ekip_rol_tatmin": "Rolüm ve ekibimin etkisi yüksek.",
-            "q04_ekip_iyilestirme": "Platformlar arası koordinasyonun daha akıcı olması.",
-            "q05_motivasyon_arttiran": "Ekip başarısı ve YZ araçlarının etkin kullanımı.",
-            "q06_yonetici_geri_bildirim": "Açık ve çift yönlü geri bildirim kültürü var.",
-            "q07_ym_verimlilik": "YZ ve mimari alanlarında beklentiler yüksek.",
-            "q08_gmy_iletisimi": "Doğrudan ve yapıcı iletişim kurulabiliyor.",
-            "q09_vizyon_strateji": "Stratejik hedefler net.",
-            "q10_degistirmek_istenen": "Değişikliklerde bilgilendirme sırasının netleşmesi.",
-            "q11_mevcut_calisma_modeli": "Hibrit çalışma verimli.",
-            "q12_ilerisi_calisma_modeli": "Hibrit modelin sürdürülmesi.",
-            "q13_harmony": "Metriklerin sadeleştirilmesi önerilir.",
-            "q14_toplandigimiza_degsin": "Odaklı toplantılar değer yaratıyor.",
-            "q15_karar_alma_surecleri": "Birim içi hızlı, üst ölçekte iyileşmeye açık.",
-            "ik_kariyer": "İK iş ortaklığı desteği güçlü.",
-            "ik_deneyim_marka": "Kurumsal marka bilinirliği yüksek.",
-            "ik_ucret_merkezi": "Bütçe ve kota netliği önemli.",
-            "ik_akademi": "Yurt dışı ve uzmanlık eğitimleri değerli.",
-            "q_kapanis": "Çalışan sesinin düzenli toplanması çok kıymetli.",
-            "p_genel_memnuniyet": 4.3,
-            "p_ekip_motivasyonu": 4.4,
-            "p_kendi_motivasyonu": 4.2,
-            "p_is_yasam_dengesi": 3.7,
-            "p_1_yonetici_iletisimi": 4.4,
-            "p_ym_degerlendirme": 3.5,
-            "p_direktor_iletisimi": 4.5,
-            "p_gmy_iletisimi": 4.1,
-            "p_ucret_yan_hak": 3.3,
-            "p_ik_iletisimi": 4.5,
-            "p_yz_kullanim": 4.3,
-        },
+    candidates = [
+        "records_126_compact.json",
+        "records_126.json",
+        os.path.join(os.path.dirname(__file__), "records_126_compact.json"),
     ]
-    return pd.DataFrame(rows)
+    for cand in candidates:
+        if cand and os.path.exists(cand):
+            with open(cand, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, list) and len(loaded) > 0:
+                return _map_records_to_df(loaded)
+    return pd.DataFrame([])
 
 
 def load_records() -> tuple[pd.DataFrame, str]:
@@ -681,7 +644,7 @@ def load_records() -> tuple[pd.DataFrame, str]:
         except Exception as e:
             return st.session_state.local_df.copy(), f"Yerel/Demo Mod (Sheets hatası: {e})"
 
-    return st.session_state.local_df.copy(), "Demo / Yerel Mod (Google Sheets bağlı değil)"
+    return st.session_state.local_df.copy(), f"Yerel Havuz ({len(st.session_state.local_df)} Kayıt)"
 
 
 def save_record(record: dict) -> tuple[bool, str]:
@@ -704,7 +667,7 @@ def save_record(record: dict) -> tuple[bool, str]:
 
     new_row = pd.DataFrame([record])
     st.session_state.local_df = pd.concat([st.session_state.local_df, new_row], ignore_index=True)
-    return True, "Kayıt demo/oturum verisine eklendi (Google Sheets bağlandığında doğrudan Sheets'e yazılacak)."
+    return True, "Kayıt oturum verisine eklendi."
 
 
 def build_excel_export(df_raw: pd.DataFrame) -> bytes:
@@ -908,7 +871,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     total_slides = 5 + len(soru_slayt_gruplari) + max(1, len(birim_gruplari))
     slide_counter = 1
 
-    # 1. Yönetici Özeti
     n_kisi = len(df_filtered)
     birim_sayisi = df_filtered["birim"].nunique() if not df_filtered.empty and "birim" in df_filtered.columns else 0
     puan_ort = {}
@@ -945,7 +907,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         c_purple,
     )
 
-    # 2. Görüşme Kapsamı
     s2 = prs.slides.add_slide(blank_layout)
     add_header(s2, slide_counter, total_slides, "Görüşme Kapsamı", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -979,7 +940,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         c_purple,
     )
 
-    # 3. Genel Değerlendirme Puanları
     s3 = prs.slides.add_slide(blank_layout)
     add_header(s3, slide_counter, total_slides, "Genel Değerlendirme (1-5 Puan Ortalamaları)", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -988,7 +948,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     add_card(s3, 0.6, 1.35, 5.9, 5.2, "Kriter Ortalamaları (1/2)", tum_puanlar[:yarim] or ["Veri yok"], c_teal)
     add_card(s3, 6.8, 1.35, 5.9, 5.2, "Kriter Ortalamaları (2/2)", tum_puanlar[yarim:] or ["Veri yok"], c_purple)
 
-    # 4. Her Soru İçin Tüm Açıklamalardan Çıkarılan En Çok Tekrar Eden Olumlu / Olumsuz Noktalar
     if soru_slayt_gruplari:
         for grp_idx, grup in enumerate(soru_slayt_gruplari, start=1):
             s_q = prs.slides.add_slide(blank_layout)
@@ -1024,7 +983,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         slide_counter += 1
         add_card(s_q, 0.6, 1.35, 12.1, 5.2, "Soru Açıklamaları", ["Seçili kapsamda yanıtlanmış soru açıklaması bulunmuyor."], c_teal)
 
-    # 5. Departman Geneli Olumlu & Olumsuz Değerlendirme
     s_dept = prs.slides.add_slide(blank_layout)
     add_header(
         s_dept,
@@ -1037,7 +995,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     add_card(s_dept, 0.6, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumlu Yönler", dept_analiz["olumlu"], c_teal)
     add_card(s_dept, 6.8, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumsuz Yönler", dept_analiz["olumsuz"], c_purple)
 
-    # 6. Birim Bazlı Olumlu & Olumsuz Kırılım (Tek Birimde Sorun Olsa Bile Net Görünür)
     if birim_gruplari:
         for b_idx, b_grp in enumerate(birim_gruplari, start=1):
             s_b = prs.slides.add_slide(blank_layout)
@@ -1074,7 +1031,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         slide_counter += 1
         add_card(s_b, 0.6, 1.35, 12.1, 5.2, "Birim Kırılımı", ["Seçili kapsamda birim kaydı bulunmuyor."], c_teal)
 
-    # 7. Temalar ve Duygu Dağılımı
     s6 = prs.slides.add_slide(blank_layout)
     add_header(s6, slide_counter, total_slides, "Öne Çıkan Temalar ve Duygu Dağılımı", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -1091,7 +1047,6 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     add_card(s6, 0.6, 1.35, 5.9, 5.2, "Öne Çıkan Ana Temalar", temalar, c_teal)
     add_card(s6, 6.8, 1.35, 5.9, 5.2, "Genel Duygu Dağılımı", duygular, c_purple)
 
-    # 8. İK Önerileri ve Aksiyon Planı
     s7 = prs.slides.add_slide(blank_layout)
     add_header(s7, slide_counter, total_slides, "İK Önerileri ve Aksiyon Planı", f"{secili_gmy}  |  Dönem: {secili_donem}")
     aksiyonlar = (
@@ -1495,8 +1450,45 @@ elif sayfa == "Standart Dashboard & Sunum":
                 for n_txt in s_oz["olumsuz_noktalar"] or ["Öne çıkan olumsuz ifade yok"]:
                     st.markdown(f"- {n_txt}")
 
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader(f"Çalışan Yorumları — Bireysel Görüş Kartları ({len(df_view)} Kayıt)")
+        for _, r_item in df_view.iterrows():
+            kisi_adi = r_item.get("calisan_rumuzu", "Katılımcı")
+            birim_adi = r_item.get("birim", "")
+            duygu_adi = r_item.get("duygu_durumu", "Olumlu")
+            mem_puan = r_item.get("p_genel_memnuniyet", "-")
+            q01_txt = r_item.get("q01_calisma_hayati", "")
+            q02_txt = r_item.get("q02_guclu_yonler", "")
+            q04_txt = r_item.get("q04_ekip_iyilestirme", "")
+            q10_txt = r_item.get("q10_degistirmek_istenen", "")
+            st.markdown(
+                f"""
+                <div class="detail-box">
+                    <div style="font-weight:700; color:{TEAL}; margin-bottom:0.35rem;">
+                        {kisi_adi} &nbsp;•&nbsp; {birim_adi} &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{duygu_adi}</span> &nbsp;•&nbsp; Memnuniyet: <b>{mem_puan}</b>
+                    </div>
+                    <div><b>Çalışma Hayatı:</b> {q01_txt}</div>
+                    <div><b>Güçlü Yönler:</b> {q02_txt}</div>
+                    <div><b>İyileştirme / Ekip:</b> {q04_txt}</div>
+                    <div><b>Değiştirmek İstenen:</b> {q10_txt}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
 else:
     st.subheader("Kayıt Havuzu")
+    if not df_all.empty:
+        arama_metni = st.text_input(
+            "Havuzda Ara (Katılımcı, Birim, Yorum veya Tema)",
+            placeholder="örnek: uzaktan, onay, terfi, Mobil...",
+        )
+        if arama_metni and arama_metni.strip():
+            q_low = arama_metni.strip().lower()
+            mask = df_all.apply(lambda s: s.astype(str).str.lower().str.contains(q_low, na=False)).any(axis=1)
+            df_all = df_all[mask].copy()
+            st.caption(f"Filtrelenen kayıt sayısı: {len(df_all)}")
+
     if df_all.empty:
         st.info("Henüz kayıt bulunmuyor.")
     else:
