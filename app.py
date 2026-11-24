@@ -490,6 +490,12 @@ def cluster_similar_statements(
     n = len(filtered_records)
     if n == 1:
         return [f"{filtered_records[0][1]} (1 kişi)"]
+    if n == 2:
+        p0, t0 = filtered_records[0]
+        p1, t1 = filtered_records[1]
+        if p0 != p1 and (set(extract_canonical_topics(t0)) & set(extract_canonical_topics(t1))):
+            return [f'"{t0}" (2 kişi benzer görüş bildirdi)']
+        return [t0, t1]
 
     try:
         vec = TfidfVectorizer(ngram_range=(1, 2), min_df=1, sublinear_tf=True)
@@ -1685,36 +1691,59 @@ elif sayfa == "Standart Dashboard & Sunum":
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("Departman Geneli & Birim Bazlı Olumlu / Olumsuz Kırılım")
-        dept_res = analyze_department_and_units(df_view, sel_gmy_f)
+        dept_cache_key = f"dept_{_df_fingerprint(df_view)}_{sel_gmy_f}"
+        if dept_cache_key not in st.session_state:
+            with st.spinner("Departman ve birim kırılımı hazırlanıyor..."):
+                st.session_state[dept_cache_key] = _analyze_department_impl(df_view, sel_gmy_f)
+        dept_res = st.session_state[dept_cache_key]
 
         d_col1, d_col2 = st.columns(2)
         with d_col1:
             st.markdown("**Departman Geneli — Öne Çıkan Olumlu Yönler**")
-            for item in dept_res["olumlu"]:
+            olumlu_list = dept_res.get("olumlu") or ["Kayıtlı olumlu ifade bulunmuyor"]
+            for item in olumlu_list:
                 st.markdown(f"- {item}")
         with d_col2:
             st.markdown("**Departman Geneli — Öne Çıkan Olumsuz Yönler**")
-            for item in dept_res["olumsuz"]:
+            olumsuz_list = dept_res.get("olumsuz") or ["Kayıtlı olumsuz ifade bulunmuyor"]
+            for item in olumsuz_list:
                 st.markdown(f"- {item}")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        for b_item in dept_res["birimler"]:
-            st.markdown(
-                f"""
-                <div class="detail-box">
-                    <div style="font-weight:700; color:{TEAL}; margin-bottom:0.35rem;">
-                        {b_item['birim']} &nbsp;•&nbsp; {b_item['gorusme_sayisi']} Görüşme &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{b_item['durum']}</span>
-                    </div>
-                    <div><b>Olumlu:</b> {" / ".join(b_item["olumlu"])}</div>
-                    <div><b>Olumsuz:</b> {" / ".join(b_item["olumsuz"])}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
+        birimler_all = dept_res.get("birimler") or []
+        if not birimler_all:
+            st.info("Seçili kapsamda birim kırılımı bulunmuyor.")
+        else:
+            tum_birim_goster = st.checkbox(
+                f"Tüm birimleri göster ({len(birimler_all)} birim)",
+                value=False,
+                key=f"chk_all_units_{sel_gmy_f}",
             )
+            gosterilecek_birimler = birimler_all if tum_birim_goster else birimler_all[:10]
+            if not tum_birim_goster and len(birimler_all) > 10:
+                st.caption(f"Performans için ilk 10 birim gösteriliyor (toplam {len(birimler_all)} birim). Tamamını görmek için yukarıdaki kutuyu işaretle.")
+            for b_item in gosterilecek_birimler:
+                b_pos_str = " / ".join(b_item.get("olumlu") or ["Kayıt yok"])
+                b_neg_str = " / ".join(b_item.get("olumsuz") or ["Kayıt yok"])
+                st.markdown(
+                    f"""
+                    <div class="detail-box">
+                        <div style="font-weight:700; color:{TEAL}; margin-bottom:0.35rem;">
+                            {b_item['birim']} &nbsp;•&nbsp; {b_item['gorusme_sayisi']} Görüşme &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{b_item['durum']}</span>
+                        </div>
+                        <div><b>Olumlu:</b> {b_pos_str}</div>
+                        <div><b>Olumsuz:</b> {b_neg_str}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("Her Soru İçin Benzer / Ortak Noktalar (Anlamsal Gruplama)")
-        soru_ozet_list = analyze_questions_across_pool(df_view)
+        q_cache_key = f"qsum_{_df_fingerprint(df_view)}"
+        if q_cache_key not in st.session_state:
+            st.session_state[q_cache_key] = _analyze_questions_impl(df_view)
+        soru_ozet_list = st.session_state[q_cache_key]
         for s_oz in soru_ozet_list:
             with st.expander(f"{s_oz['soru']} ({s_oz['yanit_sayisi']} yanıt)"):
                 st.markdown("**Öne Çıkan Olumlu Noktalar:**")
@@ -1726,7 +1755,15 @@ elif sayfa == "Standart Dashboard & Sunum":
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader(f"Çalışan Yorumları — Bireysel Görüş Kartları ({len(df_view)} Kayıt)")
-        for _, r_item in df_view.iterrows():
+        tum_kart_goster = st.checkbox(
+            f"Tüm çalışan kartlarını göster ({len(df_view)} kayıt)",
+            value=False,
+            key="chk_all_cards",
+        )
+        kart_df = df_view if tum_kart_goster else df_view.head(25)
+        if not tum_kart_goster and len(df_view) > 25:
+            st.caption(f"Sayfanın kasmaması için ilk 25 kayıt gösteriliyor (toplam {len(df_view)} kayıt).")
+        for _, r_item in kart_df.iterrows():
             kisi_adi = r_item.get("calisan_rumuzu", "Katılımcı")
             birim_adi = r_item.get("birim", "")
             duygu_adi = r_item.get("duygu_durumu", "Olumlu")
