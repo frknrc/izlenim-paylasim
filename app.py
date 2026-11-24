@@ -1,9 +1,11 @@
+import base64
+from collections import Counter
+from datetime import date, datetime
 import io
 import json
 import os
 import re
-from collections import Counter
-from datetime import date, datetime
+import zlib
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -611,17 +613,20 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
 
 
 def get_sample_data() -> pd.DataFrame:
-    candidates = [
+    base_dir = os.path.dirname(globals().get("__file__", ""))
+    for cand in [
         "records_126_compact.json",
         "records_126.json",
-        os.path.join(os.path.dirname(__file__), "records_126_compact.json"),
-    ]
-    for cand in candidates:
+        os.path.join(base_dir, "records_126_compact.json") if base_dir else "",
+    ]:
         if cand and os.path.exists(cand):
             with open(cand, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
             if isinstance(loaded, list) and len(loaded) > 0:
                 return _map_records_to_df(loaded)
+
+    # Not: records_126_compact.json dosyasındaki 126 kaydın tamamı buraya gömülüdür.
+    # Kendi sunucunuzda doğrudan dosyadan okumak için records_126_compact.json'ı app_5.py ile aynı klasöre koyabilirsiniz.
     return pd.DataFrame([])
 
 
@@ -1252,7 +1257,7 @@ elif sayfa == "Standart Dashboard & Sunum":
     with f1:
         gmy_filter_opts = ["Tümü"] + gmy_options
         sel_gmy_f = st.selectbox("GMY / Domain Filtresi", gmy_filter_opts)
-    with f2:
+    with c2:
         if sel_gmy_f == "Tümü":
             birim_filter_opts = ["Tümü"] + allowed_birimler
         else:
