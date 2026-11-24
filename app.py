@@ -460,6 +460,7 @@ def cluster_similar_statements(
     records: list[tuple[int, str]],
     top_n: int = 3,
     sim_threshold: float = 0.34,
+    max_items: int = 400,
 ) -> list[str]:
     """
     records: [(person_idx, raw_clause), ...]
@@ -483,6 +484,9 @@ def cluster_similar_statements(
     if not filtered_records:
         return []
 
+    if len(filtered_records) > max_items:
+        filtered_records = filtered_records[:max_items]
+        norm_docs = norm_docs[:max_items]
     n = len(filtered_records)
     if n == 1:
         return [f"{filtered_records[0][1]} (1 kişi)"]
@@ -550,7 +554,42 @@ def cluster_similar_statements(
     return out
 
 
-def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
+
+def _df_fingerprint(df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return "empty"
+    try:
+        payload = pd.util.hash_pandas_object(df, index=True).values.tobytes()
+        return str(zlib.crc32(payload))
+    except Exception:
+        return f"{len(df)}_{list(df.columns)}"
+
+
+@st.cache_data(show_spinner=False)
+def _cached_question_summaries(df_key: str, records_json: str) -> list[dict]:
+    df_source = pd.read_json(io.StringIO(records_json), orient="records")
+    return _analyze_questions_impl(df_source)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_department_analysis(df_key: str, records_json: str, secili_gmy: str) -> dict:
+    df_scoped = pd.read_json(io.StringIO(records_json), orient="records")
+    return _analyze_department_impl(df_scoped, secili_gmy)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_pptx_bytes(df_key: str, records_json: str, secili_gmy: str, secili_donem: str) -> bytes:
+    df_filtered = pd.read_json(io.StringIO(records_json), orient="records")
+    return _build_pptx_impl(df_filtered, secili_gmy, secili_donem)
+
+
+def _df_to_json_safe(df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return "[]"
+    return df.to_json(orient="records", force_ascii=False)
+
+
+def _analyze_questions_impl(df_source: pd.DataFrame) -> list[dict]:
     summaries = []
     for col_key, soru_metni in TUM_METIN_SORULARI:
         if col_key not in df_source.columns or df_source.empty:
@@ -585,7 +624,13 @@ def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
     return summaries
 
 
-def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
+def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
+    if df_source is None or df_source.empty:
+        return []
+    return _cached_question_summaries(_df_fingerprint(df_source), _df_to_json_safe(df_source))
+
+
+def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
     if secili_gmy != "Tümü" and "gmy" in df_scoped.columns:
         df_dept = df_scoped[df_scoped["gmy"] == secili_gmy].copy()
         hedef_gmy_adlari = [secili_gmy]
@@ -1003,7 +1048,13 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
     return bio.getvalue()
 
 
-def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: str) -> bytes:
+def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
+    if df_scoped is None:
+        df_scoped = pd.DataFrame()
+    return _cached_department_analysis(_df_fingerprint(df_scoped), _df_to_json_safe(df_scoped), secili_gmy)
+
+
+def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: str) -> bytes:
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -1532,14 +1583,23 @@ elif sayfa == "Standart Dashboard & Sunum":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    pptx_bytes = build_pptx_report(df_view, sel_gmy_f, sel_donem_f)
-    st.download_button(
-        label="📊 Standart Direktör Sunumunu İndir (.pptx)",
-        data=pptx_bytes,
-        file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
-        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        use_container_width=True,
-    )
+    pptx_state_key = f"pptx_{_df_fingerprint(df_view)}_{sel_gmy_f}_{sel_donem_f}"
+    if st.button("📊 Standart Direktör Sunumu Hazırla (.pptx)", use_container_width=True):
+        with st.spinner("Sunum oluşturuluyor..."):
+            st.session_state[pptx_state_key] = _cached_pptx_bytes(
+                _df_fingerprint(df_view),
+                _df_to_json_safe(df_view),
+                sel_gmy_f,
+                sel_donem_f,
+            )
+    if pptx_state_key in st.session_state:
+        st.download_button(
+            label="📥 Hazırlanan Sunumu İndir (.pptx)",
+            data=st.session_state[pptx_state_key],
+            file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            use_container_width=True,
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
