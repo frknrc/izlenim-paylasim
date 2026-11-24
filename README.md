@@ -1,1 +1,1 @@
-# softtech-izlenim-paylasim
+# izlenim-paylasim
