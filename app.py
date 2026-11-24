@@ -6,6 +6,7 @@ import json
 import os
 import re
 import zlib
+import numpy as np
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
@@ -14,6 +15,8 @@ import plotly.graph_objects as go
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import streamlit as st
 
 st.set_page_config(
@@ -219,7 +222,7 @@ GORUSME_SORULARI = [
     ("q11_mevcut_calisma_modeli", "Mevcut çalışma modelinle ilgili ne düşünüyorsun?"),
     ("q12_ilerisi_calisma_modeli", "İlerisi için nasıl bir çalışma modeli olursa daha verimli çalışacağına inanıyorsun?"),
     ("q13_harmony", "Harmony ile ilgili görüşlerin nasıl, çalışma sürecine olan etkisini nasıl değerlendirirsin?"),
-    ("q14_toplandigimiza_degsin", "\"Toplandığımıza Değsin\" temasının ne kadar işlendiğini düşünüyorsun?"),
+    ("q14_toplandigimiza_degsin", ""Toplandığımıza Değsin" temasının ne kadar işlendiğini düşünüyorsun?"),
     ("q15_karar_alma_surecleri", "Karar alma süreçlerini hem ekip içi işleyişler hem de üst yönetim seviyesinde nasıl değerlendirirsin?"),
 ]
 
@@ -305,6 +308,14 @@ NEG_SIGNALS = [
     "sadeleştir",
     "şeffaf olabilir",
     "karne yükü",
+    "yetki",
+    "onay",
+    "uzun sürüyor",
+    "kopuk",
+    "yetersiz kalıyor",
+    "artırılmalı",
+    "iyileştirilmeli",
+    "net değil",
 ]
 
 POS_SIGNALS = [
@@ -328,7 +339,91 @@ POS_SIGNALS = [
     "tatmin",
     "sorun yok",
     "akıcı",
+    "uyumlu",
+    "destekliyor",
+    "katkı sağlıyor",
+    "düzenli",
+    "memnunum",
 ]
+
+TR_STOPWORDS = {
+    "ve", "veya", "ile", "için", "gibi", "kadar", "daha", "çok", "az", "bir", "bu", "şu", "o",
+    "da", "de", "ki", "mi", "mı", "mu", "mü", "ama", "fakat", "ancak", "lakin", "çünkü", "yani",
+    "en", "her", "bazı", "tüm", "bütün", "hem", "ne", "nasıl", "neden", "niye", "var", "yok",
+    "olan", "olarak", "olması", "olduğunu", "oluyor", "olabilir", "olsa", "olsun", "olmak",
+    "ben", "sen", "biz", "siz", "onlar", "benim", "bizim", "kendi", "bana", "bize", "beni",
+    "süreç", "süreçler", "süreçleri", "konu", "konuda", "konular", "alan", "alanlar", "şekilde",
+    "ilgili", "yönelik", "göre", "üzerine", "tarafında", "tarafından", "açısından", "noktasında",
+    "şuan", "şu", "an", "genel", "olarak", "bence", "açıkçası", "özellikle", "gerçekten",
+}
+
+SEMANTIC_EQUIVALENTS = [
+    (r"(uzaktan|remote|evden|home\s*office)", "uzaktan_calisma"),
+    (r"(hibrit|ofis\s*gün|ofise\s*gel|ofis\s*sayı)", "hibrit_ofis"),
+    (r"(terfi|unvan|kariyer\s*yolu|kariyer\s*ilerle|pozisyon\s*değiş)", "kariyer_terfi"),
+    (r"(ücret|maaş|zam|prim|yan\s*hak|enflasyon|gelir)", "ucret_yan_hak"),
+    (r"(geri\s*bildirim|feedback|1-1|bire\s*bir|birebir)", "geri_bildirim"),
+    (r"(yetki|onay\s*sürec|onay\s*mekanizma|bürokrasi|karar\s*alma|karar\s*sürec)", "karar_yetki_onay"),
+    (r"(yetkinlik\s*merkezi|ym|matris\s*yapı)", "yetkinlik_merkezi"),
+    (r"(iş\s*yük|yoğunluk|mesai|iş\s*yaşam|iş-yaşam|denge)", "is_yuku_denge"),
+    (r"(toplantı|toplandığımıza\s*değsin|gereksiz\s*toplantı)", "toplanti_verimlilik"),
+    (r"(harmony|karne|performans\s*değerlendir|hedef\s*gir)", "harmony_karne"),
+    (r"(yapay\s*zeka|codemantis|amigo|asistan|yz|ai)", "yapay_zeka_arac"),
+    (r"(eğitim|akademi|gelişim|teknik\s*eğitim|mentor)", "egitim_akademi"),
+    (r"(ekip\s*içi|takım\s*arkadaş|yardımlaş|iş\s*birliği|iletişim\s*güçlü)", "ekip_iletisim"),
+    (r"(yönetici|direktör|gmy|üst\s*yönetim|lider)", "yonetim_iletisim"),
+    (r"(proje|ürün|teknoloji|sorumluluk|katkı)", "proje_rol_tatmin"),
+]
+
+CANONICAL_TOPIC_LABELS = {
+    "uzaktan_calisma": "Uzaktan / evden çalışma esnekliği ve gün sayısı",
+    "hibrit_ofis": "Hibrit çalışma düzeni ve ofis günleri",
+    "kariyer_terfi": "Kariyer gelişimi, rol değişimi ve terfi süreçleri",
+    "ucret_yan_hak": "Ücret artışı, prim ve yan hak beklentileri",
+    "geri_bildirim": "Yönetici ile düzenli birebir görüşme ve geri bildirim",
+    "karar_yetki_onay": "Karar alma hızı, yetki devri ve onay süreçleri",
+    "yetkinlik_merkezi": "Yetkinlik Merkezi yapısı ve işleyişi",
+    "is_yuku_denge": "İş yükü yoğunluğu ve iş-yaşam dengesi",
+    "toplanti_verimlilik": "Toplantı yoğunluğu ve 'Toplandığımıza Değsin' pratiği",
+    "harmony_karne": "Harmony / karne süreci ve operasyonel yükü",
+    "yapay_zeka_arac": "Yapay zeka araçlarının (CodeMantis, Amigo vb.) kullanımı",
+    "egitim_akademi": "Eğitim, Akademi ve teknik gelişim imkânları",
+    "ekip_iletisim": "Ekip içi iletişim, yardımlaşma ve dayanışma",
+    "yonetim_iletisim": "Yönetici, Direktör ve GMY iletişimi",
+    "proje_rol_tatmin": "Proje çeşitliliği, rol tatmini ve teknik katkı",
+}
+
+
+def normalize_turkish_text(text: str) -> str:
+    low = text.lower()
+    low = (
+        low.replace("İ", "i")
+        .replace("I", "ı")
+        .replace("’", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+    )
+    for pattern, canonical in SEMANTIC_EQUIVALENTS:
+        low = re.sub(pattern, f" {canonical} ", low)
+
+    low = re.sub(r"[^a-zçğıöşü0-9_\s]", " ", low)
+    tokens = []
+    for tok in low.split():
+        if tok in TR_STOPWORDS or len(tok) < 3:
+            continue
+        if "_" not in tok and len(tok) > 5:
+            tok = tok[:6]
+        tokens.append(tok)
+    return " ".join(tokens)
+
+
+def extract_canonical_topics(text: str) -> list[str]:
+    low = text.lower().replace("İ", "i").replace("I", "ı")
+    matched = []
+    for pattern, canonical in SEMANTIC_EQUIVALENTS:
+        if re.search(pattern, low):
+            matched.append(canonical)
+    return matched
 
 
 def split_clauses(text: str) -> list[str]:
@@ -337,10 +432,11 @@ def split_clauses(text: str) -> list[str]:
     cleaned = text.strip()
     if not cleaned:
         return []
-    parts = re.split(r"[.!?\n;]+|,\s+(?=[A-ZÇĞİÖŞÜa-zçğıöşü]{3,})", cleaned)
+    parts = re.split(r"[.!?
+;]+|,\s+(?=[A-ZÇĞİÖŞÜa-zçğıöşü]{3,})", cleaned)
     result = []
     for p in parts:
-        item = re.sub(r"\s+", " ", p).strip(" -•\t")
+        item = re.sub(r"\s+", " ", p).strip(" -•	")
         if len(item) >= 4:
             result.append(item)
     return result if result else [cleaned]
@@ -361,17 +457,102 @@ def classify_clause(clause: str, row_duygu: str = "") -> str:
     return "olumlu"
 
 
-def summarize_top_points(clauses: list[str], top_n: int = 3) -> list[str]:
-    if not clauses:
+def cluster_similar_statements(
+    records: list[tuple[int, str]],
+    top_n: int = 3,
+    sim_threshold: float = 0.34,
+) -> list[str]:
+    """
+    records: [(person_idx, raw_clause), ...]
+    Farklı kelimelerle kurulsa bile aynı kavrama/anlama işaret eden ifadeleri
+    kosinüs benzerliği + kavram eşleştirme ile kümeler ve kaç farklı kişide
+    geçtiğini hesaplar.
+    """
+    if not records:
         return []
-    counts = Counter(clauses)
-    ranked = sorted(counts.items(), key=lambda x: (-x[1], -len(x[0])))
+
+    filtered_records = []
+    norm_docs = []
+    for p_id, raw_txt in records:
+        clean_txt = re.sub(r"\s+", " ", raw_txt).strip()
+        if len(clean_txt) < 4:
+            continue
+        norm = normalize_turkish_text(clean_txt)
+        filtered_records.append((p_id, clean_txt))
+        norm_docs.append(norm if norm.strip() else clean_txt.lower())
+
+    if not filtered_records:
+        return []
+
+    n = len(filtered_records)
+    if n == 1:
+        return [f"{filtered_records[0][1]} (1 kişi)"]
+
+    try:
+        vec = TfidfVectorizer(ngram_range=(1, 2), min_df=1, sublinear_tf=True)
+        tfidf_mat = vec.fit_transform(norm_docs)
+        sim_mat = cosine_similarity(tfidf_mat)
+    except Exception:
+        sim_mat = np.eye(n)
+
+    # Ortak kanonik kavram paylaşan cümlelerin benzerlik skorunu güçlendir
+    topics_per_item = [set(extract_canonical_topics(txt)) for _, txt in filtered_records]
+    for i in range(n):
+        if not topics_per_item[i]:
+            continue
+        for j in range(i + 1, n):
+            if topics_per_item[i] & topics_per_item[j]:
+                boosted = max(sim_mat[i, j], 0.55)
+                sim_mat[i, j] = boosted
+                sim_mat[j, i] = boosted
+
+    # Açgözlü (greedy) merkez tabanlı kümeleme: en çok komşusu olan cümle küme merkezi olur
+    unassigned = set(range(n))
+    clusters = []
+
+    while unassigned:
+        best_center = max(
+            unassigned,
+            key=lambda idx: sum(1 for j in unassigned if sim_mat[idx, j] >= sim_threshold),
+        )
+        members = [j for j in list(unassigned) if sim_mat[best_center, j] >= sim_threshold]
+        for m in members:
+            unassigned.remove(m)
+        clusters.append(members)
+
+    # Kümeleri benzersiz kişi sayısına göre sırala
+    ranked_clusters = []
+    for member_idxs in clusters:
+        unique_people = {filtered_records[idx][0] for idx in member_idxs}
+        person_count = len(unique_people)
+
+        # Küme içinden en net ve orta uzunluktaki temsilci cümleyi seç
+        candidate_texts = [filtered_records[idx][1] for idx in member_idxs]
+        rep_text = min(
+            candidate_texts,
+            key=lambda t: (abs(len(t) - 65), -len(t)),
+        )
+
+        # Kümede baskın bir ana konu varsa parantez içi tema etiketiyle zenginleştir
+        topic_counter = Counter(
+            t_key for idx in member_idxs for t_key in topics_per_item[idx]
+        )
+        tema_etiketi = ""
+        if topic_counter:
+            top_topic, top_t_cnt = topic_counter.most_common(1)[0]
+            if top_t_cnt >= 2 and top_topic in CANONICAL_TOPIC_LABELS:
+                tema_etiketi = f"[{CANONICAL_TOPIC_LABELS[top_topic]}] "
+
+        ranked_clusters.append((person_count, len(member_idxs), tema_etiketi, rep_text))
+
+    ranked_clusters.sort(key=lambda x: (-x[0], -x[1], len(x[3])))
+
     out = []
-    for ifade, adet in ranked[:top_n]:
-        if adet > 1:
-            out.append(f"{ifade} ({adet} tekrar)")
+    for person_count, _, tema_etiketi, rep_text in ranked_clusters[:top_n]:
+        if person_count > 1:
+            out.append(f"{tema_etiketi}"{rep_text}" ({person_count} kişi benzer görüş bildirdi)")
         else:
-            out.append(ifade)
+            out.append(f"{tema_etiketi}{rep_text}")
     return out
 
 
@@ -380,11 +561,11 @@ def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
     for col_key, soru_metni in TUM_METIN_SORULARI:
         if col_key not in df_source.columns or df_source.empty:
             continue
-        pos_clauses = []
-        neg_clauses = []
+        pos_records = []
+        neg_records = []
         yanit_sayisi = 0
 
-        for _, row in df_source.iterrows():
+        for person_idx, (_, row) in enumerate(df_source.iterrows()):
             raw_val = row.get(col_key, "")
             if pd.isna(raw_val) or not str(raw_val).strip():
                 continue
@@ -393,9 +574,9 @@ def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
             for c_item in split_clauses(str(raw_val)):
                 yon = classify_clause(c_item, row_duygu)
                 if yon == "olumsuz":
-                    neg_clauses.append(c_item)
+                    neg_records.append((person_idx, c_item))
                 else:
-                    pos_clauses.append(c_item)
+                    pos_records.append((person_idx, c_item))
 
         if yanit_sayisi > 0:
             summaries.append(
@@ -403,8 +584,8 @@ def analyze_questions_across_pool(df_source: pd.DataFrame) -> list[dict]:
                     "soru_kodu": col_key,
                     "soru": soru_metni,
                     "yanit_sayisi": yanit_sayisi,
-                    "olumlu_noktalar": summarize_top_points(pos_clauses, top_n=3),
-                    "olumsuz_noktalar": summarize_top_points(neg_clauses, top_n=3),
+                    "olumlu_noktalar": cluster_similar_statements(pos_records, top_n=3),
+                    "olumsuz_noktalar": cluster_similar_statements(neg_records, top_n=3),
                 }
             )
     return summaries
@@ -426,16 +607,16 @@ def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> di
     dept_neg_all = []
     text_cols = [k for k, _ in TUM_METIN_SORULARI if k in df_dept.columns]
 
-    for _, row in df_dept.iterrows():
+    for person_idx, (_, row) in enumerate(df_dept.iterrows()):
         row_duygu = str(row.get("duygu_durumu", "") or "")
         for tc in text_cols:
             val = row.get(tc, "")
             if pd.notna(val) and str(val).strip():
                 for c_item in split_clauses(str(val)):
                     if classify_clause(c_item, row_duygu) == "olumsuz":
-                        dept_neg_all.append(c_item)
+                        dept_neg_all.append((person_idx, c_item))
                     else:
-                        dept_pos_all.append(c_item)
+                        dept_pos_all.append((person_idx, c_item))
 
     birim_listesi = []
     for g_ad in hedef_gmy_adlari:
@@ -451,24 +632,36 @@ def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> di
                 tum_birimler.append(b)
 
         for b_ad in tum_birimler:
-            df_b = df_dept[df_dept["birim"] == b_ad] if not df_dept.empty and "birim" in df_dept.columns else pd.DataFrame()
+            df_b = (
+                df_dept[df_dept["birim"] == b_ad]
+                if not df_dept.empty and "birim" in df_dept.columns
+                else pd.DataFrame()
+            )
             b_pos = []
             b_neg = []
-            for _, row in df_b.iterrows():
+            for p_idx, (_, row) in enumerate(df_b.iterrows()):
                 row_duygu = str(row.get("duygu_durumu", "") or "")
                 for tc in text_cols:
                     val = row.get(tc, "")
                     if pd.notna(val) and str(val).strip():
                         for c_item in split_clauses(str(val)):
                             if classify_clause(c_item, row_duygu) == "olumsuz":
-                                b_neg.append(c_item)
+                                b_neg.append((p_idx, c_item))
                             else:
-                                b_pos.append(c_item)
+                                b_pos.append((p_idx, c_item))
 
-            top_b_pos = summarize_top_points(b_pos, top_n=2)
-            top_b_neg = summarize_top_points(b_neg, top_n=2)
-            olumsuz_kisi = int((df_b["duygu_durumu"] == "Olumsuz").sum()) if not df_b.empty and "duygu_durumu" in df_b.columns else 0
-            aksiyon_kisi = int((df_b["aksiyon_ihtiyaci"] == "Evet").sum()) if not df_b.empty and "aksiyon_ihtiyaci" in df_b.columns else 0
+            top_b_pos = cluster_similar_statements(b_pos, top_n=2)
+            top_b_neg = cluster_similar_statements(b_neg, top_n=2)
+            olumsuz_kisi = (
+                int((df_b["duygu_durumu"] == "Olumsuz").sum())
+                if not df_b.empty and "duygu_durumu" in df_b.columns
+                else 0
+            )
+            aksiyon_kisi = (
+                int((df_b["aksiyon_ihtiyaci"] == "Evet").sum())
+                if not df_b.empty and "aksiyon_ihtiyaci" in df_b.columns
+                else 0
+            )
 
             if df_b.empty:
                 durum_etiketi = "Kayıt Yok"
@@ -490,8 +683,8 @@ def analyze_department_and_units(df_scoped: pd.DataFrame, secili_gmy: str) -> di
 
     return {
         "gorusme_sayisi": len(df_dept),
-        "olumlu": summarize_top_points(dept_pos_all, top_n=4) or ["Yeterli yorum bulunmuyor"],
-        "olumsuz": summarize_top_points(dept_neg_all, top_n=4) or ["Öne çıkan olumsuz ifade bulunmuyor"],
+        "olumlu": cluster_similar_statements(dept_pos_all, top_n=4) or ["Yeterli yorum bulunmuyor"],
+        "olumsuz": cluster_similar_statements(dept_neg_all, top_n=4) or ["Öne çıkan olumsuz ifade bulunmuyor"],
         "birimler": birim_listesi,
     }
 
@@ -550,7 +743,12 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
         q10_txt = _clean(r.get("st'te neyi değiştirmek isterdin?"))
         aksiyon_var = (
             "Evet"
-            if (q10_txt and len(q10_txt) > 12 and "aklıma" not in q10_txt.lower() and "yorum yapamıcam" not in q10_txt.lower())
+            if (
+                q10_txt
+                and len(q10_txt) > 12
+                and "aklıma" not in q10_txt.lower()
+                and "yorum yapamıcam" not in q10_txt.lower()
+            )
             else "Hayır"
         )
         yz_yorum = _clean(r.get("Yapay Zeka Kullanım Sıklığı Yorum(CodeMantis, Amigo, Asistan vb.)"))
@@ -625,8 +823,6 @@ def get_sample_data() -> pd.DataFrame:
             if isinstance(loaded, list) and len(loaded) > 0:
                 return _map_records_to_df(loaded)
 
-    # Not: records_126_compact.json dosyasındaki 126 kaydın tamamı buraya gömülüdür.
-    # Kendi sunucunuzda doğrudan dosyadan okumak için records_126_compact.json'ı app_5.py ile aynı klasöre koyabilirsiniz.
     return pd.DataFrame([])
 
 
@@ -688,7 +884,11 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
     ozet_rows = []
     if not df_raw.empty and "birim" in df_raw.columns:
         for (gmy_ad, birim_ad), grp in df_raw.groupby(["gmy", "birim"], dropna=False):
-            num_stack = grp[puan_cols].apply(pd.to_numeric, errors="coerce").stack() if puan_cols else pd.Series(dtype=float)
+            num_stack = (
+                grp[puan_cols].apply(pd.to_numeric, errors="coerce").stack()
+                if puan_cols
+                else pd.Series(dtype=float)
+            )
             ort_skor = round(float(num_stack.mean()), 2) if not num_stack.empty else None
             aksiyon_sayisi = int((grp["aksiyon_ihtiyaci"] == "Evet").sum()) if "aksiyon_ihtiyaci" in grp.columns else 0
             olumlu_sayisi = int((grp["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in grp.columns else 0
@@ -704,8 +904,20 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                     "Aksiyon İhtiyacı Olan": aksiyon_sayisi,
                 }
             )
-    df_birim_ozet = pd.DataFrame(ozet_rows) if ozet_rows else pd.DataFrame(
-        columns=["GMY / Domain", "Birim / Ekip", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan"]
+    df_birim_ozet = (
+        pd.DataFrame(ozet_rows)
+        if ozet_rows
+        else pd.DataFrame(
+            columns=[
+                "GMY / Domain",
+                "Birim / Ekip",
+                "Görüşme Sayısı",
+                "Genel Puan Ortalaması (1-5)",
+                "Olumlu Görüşme",
+                "Olumsuz Görüşme",
+                "Aksiyon İhtiyacı Olan",
+            ]
+        )
     )
 
     kriter_rows = []
@@ -778,7 +990,10 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                         ws.column_dimensions[col_letter].width = 42
                     elif "GMY" in header_text or "Birim" in header_text:
                         ws.column_dimensions[col_letter].width = 34
-                    elif any(k in header_text for k in ["Memnuniyet", "Motivasyon", "İletişimi", "Dengesi", "Sıklığı", "Değerlendirmesi"]):
+                    elif any(
+                        k in header_text
+                        for k in ["Memnuniyet", "Motivasyon", "İletişimi", "Dengesi", "Sıklığı", "Değerlendirmesi"]
+                    ):
                         ws.column_dimensions[col_letter].width = 18
                     else:
                         ws.column_dimensions[col_letter].width = max(16, min(28, len(header_text) + 5))
@@ -841,7 +1056,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         fp.font.size = Pt(9.5)
         fp.font.color.rgb = c_muted
 
-    def add_card(slide, left, top, width, height, heading, body_lines, accent=c_teal, font_pt=11.0):
+    def add_card(slide, left, top, width, height, heading, body_lines, accent=c_teal, font_pt=10.5):
         shp = slide.shapes.add_shape(1, Inches(left), Inches(top), Inches(width), Inches(height))
         shp.fill.solid()
         shp.fill.fore_color.rgb = c_card
@@ -856,7 +1071,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
 
         p0 = tf.paragraphs[0]
         p0.text = heading
-        p0.font.size = Pt(13.5)
+        p0.font.size = Pt(13.0)
         p0.font.bold = True
         p0.font.color.rgb = accent
         p0.space_after = Pt(5)
@@ -873,7 +1088,8 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
     dept_analiz = analyze_department_and_units(df_filtered, secili_gmy)
     birim_gruplari = [dept_analiz["birimler"][i : i + 4] for i in range(0, len(dept_analiz["birimler"]), 4)]
 
-    total_slides = 5 + len(soru_slayt_gruplari) + max(1, len(birim_gruplari))
+    # Sabit slaytlar: s1, s2, s3, s_dept, s6, s7 (6 slayt) + dinamik soru & birim slaytları
+    total_slides = 6 + max(1, len(soru_slayt_gruplari)) + max(1, len(birim_gruplari))
     slide_counter = 1
 
     n_kisi = len(df_filtered)
@@ -960,7 +1176,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
                 s_q,
                 slide_counter,
                 total_slides,
-                f"Soru Bazlı Tekrar Eden Olumlu & Olumsuz Noktalar ({grp_idx}/{len(soru_slayt_gruplari)})",
+                f"Soru Bazlı Benzer / Ortak Noktalar ({grp_idx}/{len(soru_slayt_gruplari)})",
                 f"{secili_gmy}  |  Dönem: {secili_donem}",
             )
             slide_counter += 1
@@ -976,11 +1192,11 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
                     2.55,
                     f"{s_item['soru']}  ({s_item['yanit_sayisi']} yanıt)",
                     [
-                        f"En Çok Tekrar Eden Olumlu Noktalar: {pos_str}",
-                        f"En Çok Tekrar Eden Olumsuz Noktalar: {neg_str}",
+                        f"Öne Çıkan Olumlu Noktalar: {pos_str}",
+                        f"Öne Çıkan Olumsuz Noktalar: {neg_str}",
                     ],
                     c_teal if slot_i % 2 == 0 else c_purple,
-                    font_pt=10.5,
+                    font_pt=10.0,
                 )
     else:
         s_q = prs.slides.add_slide(blank_layout)
@@ -997,8 +1213,8 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
         f"{secili_gmy}  |  Görüşme Sayısı: {dept_analiz['gorusme_sayisi']}  |  Dönem: {secili_donem}",
     )
     slide_counter += 1
-    add_card(s_dept, 0.6, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumlu Yönler", dept_analiz["olumlu"], c_teal)
-    add_card(s_dept, 6.8, 1.35, 5.9, 5.2, "Departman Geneli En Çok Tekrar Eden Olumsuz Yönler", dept_analiz["olumsuz"], c_purple)
+    add_card(s_dept, 0.6, 1.35, 5.9, 5.2, "Departman Geneli Öne Çıkan Olumlu Yönler", dept_analiz["olumlu"], c_teal)
+    add_card(s_dept, 6.8, 1.35, 5.9, 5.2, "Departman Geneli Öne Çıkan Olumsuz Yönler", dept_analiz["olumsuz"], c_purple)
 
     if birim_gruplari:
         for b_idx, b_grp in enumerate(birim_gruplari, start=1):
@@ -1028,7 +1244,7 @@ def build_pptx_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: 
                         f"Olumsuz: {b_neg_txt}",
                     ],
                     c_purple if "Dikkat" in b_item["durum"] else c_teal,
-                    font_pt=10.0,
+                    font_pt=9.5,
                 )
     else:
         s_b = prs.slides.add_slide(blank_layout)
@@ -1222,7 +1438,7 @@ if sayfa == "1-1 Görüşme Kayıt":
     if st.button("Görüşme Kaydını Havuza Aktar", type="primary", use_container_width=True):
         new_record = {
             "kayit_id": datetime.now().strftime("%Y%m%d-%H%M%S"),
-            "kayit_zamani": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "kayit_zamani": f"{gorusme_tarihi.strftime('%Y-%m-%d')} {datetime.now().strftime('%H:%M')}",
             "donem": sec_donem,
             "hrbp_kullanici": user["username"],
             "gmy": sec_gmy,
@@ -1420,11 +1636,11 @@ elif sayfa == "Standart Dashboard & Sunum":
 
         d_col1, d_col2 = st.columns(2)
         with d_col1:
-            st.markdown("**Departman Geneli — En Çok Tekrar Eden Olumlu Yönler**")
+            st.markdown("**Departman Geneli — Öne Çıkan Olumlu Yönler**")
             for item in dept_res["olumlu"]:
                 st.markdown(f"- {item}")
         with d_col2:
-            st.markdown("**Departman Geneli — En Çok Tekrar Eden Olumsuz Yönler**")
+            st.markdown("**Departman Geneli — Öne Çıkan Olumsuz Yönler**")
             for item in dept_res["olumsuz"]:
                 st.markdown(f"- {item}")
 
@@ -1444,14 +1660,14 @@ elif sayfa == "Standart Dashboard & Sunum":
             )
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("Her Soru İçin Tüm Açıklamalardan Seçilen En Çok Tekrar Eden Noktalar")
+        st.subheader("Her Soru İçin Benzer / Ortak Noktalar (Anlamsal Gruplama)")
         soru_ozet_list = analyze_questions_across_pool(df_view)
         for s_oz in soru_ozet_list:
             with st.expander(f"{s_oz['soru']} ({s_oz['yanit_sayisi']} yanıt)"):
-                st.markdown("**En Çok Tekrar Eden Olumlu Noktalar:**")
+                st.markdown("**Öne Çıkan Olumlu Noktalar:**")
                 for p_txt in s_oz["olumlu_noktalar"] or ["Öne çıkan olumlu ifade yok"]:
                     st.markdown(f"- {p_txt}")
-                st.markdown("**En Çok Tekrar Eden Olumsuz Noktalar:**")
+                st.markdown("**Öne Çıkan Olumsuz Noktalar:**")
                 for n_txt in s_oz["olumsuz_noktalar"] or ["Öne çıkan olumsuz ifade yok"]:
                     st.markdown(f"- {n_txt}")
 
