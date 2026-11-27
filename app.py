@@ -786,6 +786,79 @@ PUAN_BASLIKLARI = [
     ("p_yz_kullanim", "Yapay Zeka Kullanım Sıklığı (CodeMantis, Amigo, Asistan vb.)"),
 ]
 
+SCORE_ALIAS_MAP = {
+    "p_genel_memnuniyet": [
+        "p_genel_memnuniyet",
+        "Genel Memnuniyet",
+        "Genel Memnuniyet Puanı",
+        "Softtech Memnuniyeti",
+        "Softtech'e Aidiyet",
+        "Aidiyet",
+        "st Memnuniyeti",
+    ],
+    "p_ekip_motivasyonu": [
+        "p_ekip_motivasyonu",
+        "Ekip Motivasyonu",
+        "Ekip Motivasyonu Puanı",
+    ],
+    "p_kendi_motivasyonu": [
+        "p_kendi_motivasyonu",
+        "Kendi Motivasyonu",
+        "Bireysel Motivasyon",
+        "Kendi Motivasyonu Puanı",
+    ],
+    "p_is_yasam_dengesi": [
+        "p_is_yasam_dengesi",
+        "İş Yaşam Dengesi",
+        "İş-Yaşam Dengesi",
+        "İş Yaşam Dengesi Puanı",
+    ],
+    "p_1_yonetici_iletisimi": [
+        "p_1_yonetici_iletisimi",
+        "1. Yönetici İletişimi",
+        "1.Yönetici İletişimi",
+        "Yönetici İletişimi",
+        "Birinci Yönetici İletişimi",
+        "1. Yönetici İletişimi Puanı",
+    ],
+    "p_ym_degerlendirme": [
+        "p_ym_degerlendirme",
+        "Yetkinlik Merkezi Değerlendirmesi",
+        "YM Değerlendirmesi",
+    ],
+    "p_direktor_iletisimi": [
+        "p_direktor_iletisimi",
+        "Direktör İletişimi",
+        "Direktörüyle İletişim",
+    ],
+    "p_gmy_iletisimi": [
+        "p_gmy_iletisimi",
+        "GMY İletişimi",
+        "Üst Yönetim (GMY) İletişimi",
+        "Üst Yönetim İletişimi",
+    ],
+    "p_ucret_yan_hak": [
+        "p_ucret_yan_hak",
+        "Ücret Yan Haklar Motivasyonu",
+        "Ücret Yan Haklar",
+        "Ücret Motivasyonu",
+    ],
+    "p_ik_iletisimi": [
+        "p_ik_iletisimi",
+        "İK İletişimi",
+        "İK İletişim",
+    ],
+    "p_yz_kullanim": [
+        "p_yz_kullanim",
+        "Yapay Zeka Kullanım Sıklığı (CodeMantis, Amigo, Asistan vb.)",
+        "Yapay Zeka Kullanım Sıklığı",
+        "Yapay Zeka Kullanımı",
+        "YZ Kullanım Sıklığı",
+        "YZ Kullanımı",
+        "Yapay Zeka Kullanım Sıklığı (CodeMantis, Amigo, Asistan vb)",
+    ],
+}
+
 HALF_STEP_SCORE_OPTIONS = ["Boş", 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 
@@ -823,12 +896,15 @@ def _format_tr_date_input(raw_val: object) -> str:
 def _snap_half_step(raw_val: object) -> float | None:
     if raw_val is None or raw_val == "":
         return None
-    if isinstance(raw_val, str) and raw_val.strip().lower() in ("boş", "bos", "none", "nan"):
+    if isinstance(raw_val, str) and raw_val.strip().lower() in ("boş", "bos", "none", "nan", "-"):
         return None
     try:
         if isinstance(raw_val, float) and np.isnan(raw_val):
             return None
-        f_val = float(str(raw_val).replace(",", "."))
+        match = re.search(r"(\d+(?:[.,]\d+)?)", str(raw_val).strip())
+        if not match:
+            return None
+        f_val = float(match.group(1).replace(",", "."))
         if np.isnan(f_val):
             return None
         clamped = max(1.0, min(5.0, f_val))
@@ -836,6 +912,45 @@ def _snap_half_step(raw_val: object) -> float | None:
         return float(max(1.0, min(5.0, snapped)))
     except Exception:
         return None
+
+
+def _norm_key(k: str) -> str:
+    s = str(k or "").lower().replace("İ", "i").replace("I", "ı")
+    s = re.sub(r"[^a-zçğıöşü0-9]+", "", s)
+    return s
+
+
+def _extract_score_from_record(r: dict, p_key: str, p_label: str) -> float | None:
+    candidates = list(SCORE_ALIAS_MAP.get(p_key, [p_key, p_label]))
+    for c_key in candidates:
+        if c_key in r:
+            sc = _snap_half_step(r.get(c_key))
+            if sc is not None:
+                return sc
+
+    norm_targets = {_norm_key(c) for c in candidates if c}
+    for r_k, r_v in r.items():
+        if _norm_key(str(r_k)) in norm_targets:
+            sc = _snap_half_step(r_v)
+            if sc is not None:
+                return sc
+
+    for r_k, r_v in r.items():
+        rk_low = str(r_k).lower().replace("İ", "i").replace("I", "ı")
+        if p_key == "p_genel_memnuniyet" and ("memnuniyet" in rk_low or "aidiyet" in rk_low) and "yorum" not in rk_low:
+            sc = _snap_half_step(r_v)
+            if sc is not None:
+                return sc
+        elif p_key == "p_1_yonetici_iletisimi" and "yonetici" in rk_low and "iletişim" in rk_low or "iletisim" in rk_low:
+            sc = _snap_half_step(r_v)
+            if sc is not None:
+                return sc
+        elif p_key == "p_yz_kullanim" and ("yapay zeka" in rk_low or "yz " in rk_low or rk_low.startswith("yz") or "codemantis" in rk_low) and "yorum" not in rk_low:
+            sc = _snap_half_step(r_v)
+            if sc is not None:
+                return sc
+
+    return None
 
 
 def _has_meaningful_action_note(note_text: object) -> bool:
@@ -1499,15 +1614,6 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
             return ""
         return " ".join(str(v).split()).strip()
 
-    def _score(v):
-        if v is None or v == "" or (isinstance(v, float) and np.isnan(v)):
-            return None
-        try:
-            val = float(str(v).replace(",", "."))
-            return round(val, 2) if 1.0 <= val <= 5.0 else None
-        except Exception:
-            return None
-
     rows_out = []
     for idx, r in enumerate(records):
         g_mapped, b_mapped = all_pairs[idx % len(all_pairs)]
@@ -1525,7 +1631,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
         g_tarih = _clean(r.get("gorusme_tarihi") or r.get("Görüşme Tarihi") or r.get("Görüşme Tarihi (Ay/Gün/Yıl)")) or "2026-06-04"
         kayit_zamani_val = _clean(r.get("kayit_zamani") or r.get("Kayıt Zamanı")) or f"{g_tarih} 10:00"
 
-        mem = _score(r.get("p_genel_memnuniyet") if "p_genel_memnuniyet" in r else r.get("st Memnuniyeti"))
+        mem = _extract_score_from_record(r, "p_genel_memnuniyet", "Genel Memnuniyet")
         duygu_raw = _clean(r.get("duygu_durumu") or r.get("Duygu Durumu"))
         if duygu_raw in ["Olumlu", "Nötr", "Olumsuz"]:
             duygu = duygu_raw
@@ -1627,7 +1733,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                     for k, lbl in (GORUSME_SORULARI + IK_BASLIKLARI)
                 },
                 **{
-                    k: _score(r.get(k) if k in r else r.get(lbl))
+                    k: _extract_score_from_record(r, k, lbl)
                     for k, lbl in PUAN_BASLIKLARI
                 },
             }
