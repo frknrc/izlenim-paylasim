@@ -2384,8 +2384,9 @@ if sayfa == "1-1 Görüşme Kayıt":
                 kid = str(r.get("kayit_id", ""))
                 sic = str(r.get("sicil_no", ""))
                 ad = str(r.get("ad_soyad", "") or r.get("calisan_rumuzu", ""))
+                don = str(r.get("donem", ""))
                 gt = _format_tr_date_input(r.get("gorusme_tarihi", ""))
-                lbl = f"{sic} - {ad} ({gt}) [ID: {kid}]"
+                lbl = f"{sic} - {ad} | {don} ({gt}) [ID: {kid}]"
                 secenekler.append(lbl)
                 id_map[lbl] = kid
             secilen_lbl = st.selectbox("Güncellenecek Görüşme Kaydını Seçin", secenekler)
@@ -2393,6 +2394,11 @@ if sayfa == "1-1 Görüşme Kayıt":
             matched_df = df_all[df_all["kayit_id"] == edit_kayit_id]
             if not matched_df.empty:
                 edit_record_row = matched_df.iloc[0].to_dict()
+
+    def _pick_idx(opts: list[str], val: str, fallback: int = 0) -> int:
+        if val and val in opts:
+            return opts.index(val)
+        return fallback
 
     s_col1, s_col2, s_col3, s_col4 = st.columns(4)
     default_sicil = str(edit_record_row.get("sicil_no", "")) if edit_record_row else ""
@@ -2404,38 +2410,54 @@ if sayfa == "1-1 Görüşme Kayıt":
             key="inp_sicil_no",
         ).strip()
 
-    existing_sicil_set = set()
+    emp_info_pre = emp_directory.get(sicil_input) if sicil_input else None
+    pre_source = dict(edit_record_row) if edit_record_row else (dict(emp_info_pre) if emp_info_pre else {})
+    donem_opts = [
+        "2026 - 1. Dönem",
+        "2026 - 2. Dönem",
+        "2026 - 1. Çeyrek",
+        "2026 - 2. Çeyrek",
+        "2026 - 3. Çeyrek",
+        "2026 - 4. Çeyrek",
+    ]
+
+    with s_col4:
+        sec_donem = st.selectbox(
+            "Görüşme Dönemi",
+            donem_opts,
+            index=_pick_idx(donem_opts, str(pre_source.get("donem", "2026 - 2. Dönem")), 1),
+            key="inp_donem",
+        )
+
+    existing_sicil_donem_set = set()
     if not df_all.empty and "sicil_no" in df_all.columns:
         for _, r_row in df_all.iterrows():
             s_val = str(r_row.get("sicil_no", "") or "").strip()
+            d_val = str(r_row.get("donem", "") or "").strip()
             k_val = str(r_row.get("kayit_id", "") or "").strip()
-            if not s_val:
+            if not s_val or not d_val:
                 continue
             if edit_kayit_id and k_val == str(edit_kayit_id).strip():
                 continue
-            existing_sicil_set.add(s_val)
+            existing_sicil_donem_set.add((s_val, d_val))
 
-    is_duplicate_sicil = bool(sicil_input) and (sicil_input in existing_sicil_set)
+    is_duplicate_sicil_donem = bool(sicil_input) and ((sicil_input, str(sec_donem).strip()) in existing_sicil_donem_set)
 
-    if is_duplicate_sicil:
+    if is_duplicate_sicil_donem:
         st.error(
-            f"**{sicil_input}** siciline ait kayıt zaten havuzda mevcut! "
-            "Siciller birbirinden farklı olmalıdır. Farklı bir sicil girene kadar diğer alanlar kilitlenmiştir ve kayıt yapılamaz."
+            f"**{sicil_input}** sicili için **'{sec_donem}'** döneminde zaten kayıt mevcut! "
+            "Aynı dönemde 2. kayıt yapılamaz. Farklı bir dönem seçtiğinizde veya farklı bir sicil girdiğinizde diğer alanlar açılacaktır."
         )
     else:
-        emp_info = emp_directory.get(sicil_input) if sicil_input else None
-        if sicil_input and emp_info:
-            st.success(f"Sicil uygun (**{sicil_input}** — {emp_info['ad_soyad']}); bilgileri girebilir veya düzenleyebilirsiniz.")
-        elif sicil_input and not emp_info:
-            st.info("Bu sicil daha önce kullanılmamış; bilgileri aşağıdan girebilir veya seçebilirsiniz.")
+        if sicil_input and emp_info_pre:
+            st.success(
+                f"**{sicil_input}** ({emp_info_pre['ad_soyad']}) için **'{sec_donem}'** dönemi uygun; bilgileri girebilir veya düzenleyebilirsiniz."
+            )
+        elif sicil_input and not emp_info_pre:
+            st.info(f"**{sicil_input}** sicili ve **'{sec_donem}'** dönemi için yeni kayıt girişi yapabilirsiniz.")
 
-    def _pick_idx(opts: list[str], val: str, fallback: int = 0) -> int:
-        if val and val in opts:
-            return opts.index(val)
-        return fallback
-
-    prefill = dict(edit_record_row) if edit_record_row else (dict(emp_info) if (sicil_input and not is_duplicate_sicil and emp_info) else {})
-    if sicil_input and not is_duplicate_sicil:
+    prefill = dict(pre_source) if not is_duplicate_sicil_donem else {}
+    if sicil_input and not is_duplicate_sicil_donem:
         prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
 
     with s_col2:
@@ -2443,7 +2465,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Ad Soyad",
             value=str(prefill.get("ad_soyad", "")),
             placeholder="Ad Soyad",
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_ad_soyad",
         )
     with s_col3:
@@ -2452,17 +2474,8 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Görüşme Tarihi",
             value=default_gt_date,
             format="DD.MM.YYYY",
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_gorusme_tarihi",
-        )
-    with s_col4:
-        donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - 1. Çeyrek", "2026 - 2. Çeyrek", "2026 - 3. Çeyrek", "2026 - 4. Çeyrek"]
-        sec_donem = st.selectbox(
-            "Görüşme Dönemi",
-            donem_opts,
-            index=_pick_idx(donem_opts, str(prefill.get("donem", "2026 - 2. Dönem")), 1),
-            disabled=is_duplicate_sicil,
-            key="inp_donem",
         )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -2471,7 +2484,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Genel Müdür Yardımcılığı",
             gmy_options,
             index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_gmy",
         )
     with c2:
@@ -2479,7 +2492,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Departman",
             DEPARTMAN_OPTIONS,
             index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_departman",
         )
     with c3:
@@ -2488,7 +2501,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Birim",
             birim_options,
             index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_birim",
         )
     with c4:
@@ -2496,7 +2509,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Bölüm",
             BOLUM_OPTIONS,
             index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_bolum",
         )
 
@@ -2509,7 +2522,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Yönetici Bilgisi",
             yon_opts,
             index=_pick_idx(yon_opts, yon_val_init, 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_yonetici",
         )
     with c6:
@@ -2517,7 +2530,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "İşe Giriş Tarihi",
             value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
             placeholder="GG.AA.YYYY",
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_ise_giris",
         )
     with c7:
@@ -2525,7 +2538,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "İK İş Ortağı",
             IK_IS_ORTAGI_OPTIONS,
             index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_ik_ortagi",
         )
     with c8:
@@ -2534,12 +2547,12 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Lokasyon",
             LOKASYON_OPTIONS,
             index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_lokasyon",
         )
 
     st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-    pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil) else None
+    pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
     d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
     with d_col1:
         duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
@@ -2547,7 +2560,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
             duygu_opts,
             index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_duygu",
         )
     with d_col2:
@@ -2558,7 +2571,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Aksiyon planı gerekli mi?",
             aksiyon_opts,
             index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_aksiyon_ihtiyac",
         )
     with d_col3:
@@ -2567,7 +2580,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Çalışma Modeli",
             model_opts,
             index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_calisma_modeli",
         )
 
@@ -2578,7 +2591,7 @@ if sayfa == "1-1 Görüşme Kayıt":
         value=default_aks_note,
         height=82,
         placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
-        disabled=is_duplicate_sicil,
+        disabled=is_duplicate_sicil_donem,
         key="inp_aksiyon_plani",
     )
 
@@ -2599,7 +2612,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 q_text,
                 value=str(prefill.get(q_key, "") or ""),
                 height=70,
-                disabled=is_duplicate_sicil,
+                disabled=is_duplicate_sicil_donem,
                 key=f"inp_{q_key}",
             )
 
@@ -2609,14 +2622,14 @@ if sayfa == "1-1 Görüşme Kayıt":
                 f"İK Başlığı — {ik_label}",
                 value=str(prefill.get(ik_key, "") or ""),
                 height=70,
-                disabled=is_duplicate_sicil,
+                disabled=is_duplicate_sicil_donem,
                 key=f"inp_{ik_key}",
             )
         q_kapanis = st.text_area(
             "Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?",
             value=str(prefill.get("q_kapanis", "") or ""),
             height=80,
-            disabled=is_duplicate_sicil,
+            disabled=is_duplicate_sicil_donem,
             key="inp_q_kapanis",
         )
 
@@ -2650,8 +2663,9 @@ if sayfa == "1-1 Görüşme Kayıt":
 
     st.markdown("<br>", unsafe_allow_html=True)
     btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
-    if st.button(btn_label, type="primary", use_container_width=True, disabled=is_duplicate_sicil):
+    if st.button(btn_label, type="primary", use_container_width=True, disabled=is_duplicate_sicil_donem):
         clean_sicil = sicil_input.strip()
+        clean_donem = str(sec_donem).strip()
         clean_ad_girilen = ad_soyad_input.strip()
         clean_note = aksiyon_notu.strip()
         has_note = _has_meaningful_action_note(clean_note)
@@ -2669,8 +2683,8 @@ if sayfa == "1-1 Görüşme Kayıt":
             or has_any_score
         )
 
-        if clean_sicil and clean_sicil in existing_sicil_set:
-            st.error(f"**{clean_sicil}** sicili zaten mevcut; farklı bir sicil girmeden kaydedilemez.")
+        if clean_sicil and (clean_sicil, clean_donem) in existing_sicil_donem_set:
+            st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
         elif not edit_kayit_id and not has_any_content:
             st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
         else:
@@ -2698,7 +2712,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 "ad_soyad": final_ad,
                 "gorusme_tarihi": g_tarih_formatted,
                 "kayit_zamani": kayit_zamani_formatted,
-                "donem": sec_donem,
+                "donem": clean_donem,
                 "hrbp_kullanici": user["username"],
                 "ik_is_ortagi": sec_ik_ortagi,
                 "gmy": sec_gmy,
