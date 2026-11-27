@@ -2441,7 +2441,7 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     add_card(s2, 0.6, 1.35, 12.1, 5.2, "2025 ve 2026 Karşılaştırmalı Sonuçlar (1-5 Puan)", comp_lines, c_teal, font_pt=12.0)
 
     s3 = prs.slides.add_slide(blank_layout)
-    add_header(s3, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Ekip (4 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s3, slide_counter, total_slides, "İzlenim Paylaşım Görüşmesi – Birim Bazlı Öne Çıkan Yorumlar", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
     for i, c4 in enumerate(ekip_4):
         col_x = 0.6 if i % 2 == 0 else 6.8
@@ -3056,7 +3056,7 @@ def render_izlenim_paylasim_module(
             st.markdown(f"- {b_item}")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("👥 Ekip Değerlendirme Kriterleri (4 Başlık) & Öne Çıkan Yorumlar")
+    st.subheader("👥 İzlenim Paylaşım Görüşmesi – Birim Bazlı Öne Çıkan Yorumlar")
     ekip_4_cards = _compute_4_team_criteria(df_view)
     cols_4 = st.columns(4)
     for idx_e, e_info in enumerate(ekip_4_cards):
