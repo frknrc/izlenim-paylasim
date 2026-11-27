@@ -108,7 +108,6 @@ st.markdown(
             border-radius: 12px;
             padding: 1.25rem;
         }}
-        /* Tüm giriş kutularını (text_input, selectbox, date_input) birebir aynı görünümde hizala */
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea,
         .stSelectbox > div > div > div,
@@ -159,7 +158,6 @@ st.markdown(
             opacity: 0.92;
             color: #FFFFFF !important;
         }}
-        /* Üst başlık ve sağ duygu kutusu için orantılı yükseklik ve yerleşim */
         .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
             border: 1px solid {CARD_BORDER};
@@ -175,7 +173,7 @@ st.markdown(
         .panel-brand {{
             font-size: 1.38rem;
             font-weight: 800;
-            letter-spacing: -0.5px;
+            letter-spacing: -0.4px;
             color: {TEXT_LIGHT};
         }}
         .panel-accent {{
@@ -482,6 +480,14 @@ BOLUM_OPTIONS = [
     "API ve Entegrasyon",
 ]
 
+YONETICI_OPTIONS = [
+    "Birim Yöneticisi - 1",
+    "Birim Yöneticisi - 2",
+    "Yetkinlik Merkezi Lideri",
+    "Direktör",
+    "Genel Müdür Yardımcısı",
+]
+
 LOKASYON_OPTIONS = [
     "İstanbul - Ataşehir",
     "İstanbul - Teknopark (Pendik)",
@@ -705,17 +711,18 @@ def render_synced_score_row(p_key: str, p_label: str, default_val: float | None,
 
 COLUMN_LABELS = {
     "kayit_id": "Kayıt ID",
-    "sicil_no": "Sicil No",
+    "sicil_no": "Sicil",
     "ad_soyad": "Ad Soyad",
     "gorusme_tarihi": "Görüşme Tarihi",
     "kayit_zamani": "Kayıt Zamanı",
     "donem": "Dönem",
     "hrbp_kullanici": "İK Sorumlusu",
     "ik_is_ortagi": "İK İş Ortağı",
-    "gmy": "GMY / Domain",
+    "gmy": "Genel Müdür Yardımcılığı",
     "departman": "Departman",
-    "birim": "Birim / Ekip",
+    "birim": "Birim",
     "bolum": "Bölüm",
+    "yonetici_bilgisi": "Yönetici Bilgisi",
     "lokasyon": "Lokasyon",
     "ise_giris_tarihi": "İşe Giriş Tarihi",
     "katilimci_turu": "Katılımcı Tipi",
@@ -810,7 +817,8 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
                 continue
             g_val = str(row.get("gmy", "") or all_gmy_birim[idx % len(all_gmy_birim)][0])
             b_val = str(row.get("birim", "") or all_gmy_birim[idx % len(all_gmy_birim)][1])
-            ad_val = str(row.get("ad_soyad", "") or row.get("calisan_rumuzu", "") or f"Çalışan {sicil}").split("(")[0].strip()
+            ad_val = str(row.get("ad_soyad", "") or row.get("calisan_rumuzu", "") or f"Kayıt {sicil}").split("(")[0].strip()
+            yon_val = str(row.get("yonetici_bilgisi", "") or YONETICI_OPTIONS[idx % len(YONETICI_OPTIONS)])
             directory[sicil] = {
                 "sicil_no": sicil,
                 "ad_soyad": ad_val,
@@ -818,6 +826,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
                 "departman": str(row.get("departman", "") or DEPARTMAN_OPTIONS[idx % len(DEPARTMAN_OPTIONS)]),
                 "birim": b_val,
                 "bolum": str(row.get("bolum", "") or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]),
+                "yonetici_bilgisi": yon_val,
                 "lokasyon": str(row.get("lokasyon", "") or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]),
                 "ise_giris_tarihi": _format_tr_date_input(row.get("ise_giris_tarihi", "")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}",
                 "ik_is_ortagi": str(row.get("ik_is_ortagi", "") or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]),
@@ -831,6 +840,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
             "departman": "Yazılım Geliştirme Departmanı",
             "birim": "10000474-Kurumsal Uygulamalar",
             "bolum": "Ölçme ve Raporlama",
+            "yonetici_bilgisi": "Birim Yöneticisi - 1",
             "lokasyon": "İstanbul - Ataşehir",
             "ise_giris_tarihi": "14.03.2022",
             "ik_is_ortagi": "Şeyma Oruç",
@@ -842,6 +852,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
             "departman": "Veri ve Yapay Zeka Departmanı",
             "birim": "10000182-Veri ve Yapay Zeka Uygulamaları",
             "bolum": "Dönüşüm Atölyesi",
+            "yonetici_bilgisi": "Yetkinlik Merkezi Lideri",
             "lokasyon": "İstanbul - Teknopark (Pendik)",
             "ise_giris_tarihi": "01.09.2023",
             "ik_is_ortagi": "Şeyma Oruç",
@@ -1046,14 +1057,14 @@ def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos
     paragraflar = []
     if mem_ort is not None and mem_ort >= 4.0:
         paragraflar.append(
-            f"{unit_name} biriminde ({n_kisi} görüşme) çalışanların genel memnuniyetinin yüksek olduğu ({mem_ort}/5.00) ve ekip içi iletişim ile yardımlaşmanın olumlu değerlendirildiği görülmektedir."
+            f"{unit_name} biriminde ({n_kisi} görüşme) genel memnuniyetin yüksek olduğu ({mem_ort}/5.00) ve ekip içi iletişim ile yardımlaşmanın olumlu değerlendirildiği görülmektedir."
         )
     elif mem_ort is not None:
         paragraflar.append(
-            f"{unit_name} biriminde ({n_kisi} görüşme) genel memnuniyet ortalaması {mem_ort}/5.00 seviyesinde olup çalışanların iş ve süreç deneyimleri karma bir görünüm sergilemektedir."
+            f"{unit_name} biriminde ({n_kisi} görüşme) genel memnuniyet ortalaması {mem_ort}/5.00 seviyesinde olup iş ve süreç deneyimleri karma bir görünüm sergilemektedir."
         )
     else:
-        paragraflar.append(f"{unit_name} biriminde toplam {n_kisi} çalışan ile 1-1 izlenim paylaşım görüşmesi gerçekleştirilmiştir.")
+        paragraflar.append(f"{unit_name} biriminde toplam {n_kisi} 1-1 izlenim paylaşım görüşmesi gerçekleştirilmiştir.")
 
     if top_pos:
         pos_clean = "; ".join([p.replace('"', "") for p in top_pos[:2]])
@@ -1066,16 +1077,16 @@ def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos
     if yon_ort is not None:
         if yon_ort >= 4.0:
             paragraflar.append(
-                f"Birinci yönetici iletişimi oldukça güçlü ve tutarlı değerlendirilmektedir ({yon_ort}/5.00); çalışanlar yöneticilerine ihtiyaç duyduklarında ulaşabildiklerini ve düzenli geri bildirim alabildiklerini ifade etmektedir."
+                f"Birinci yönetici iletişimi oldukça güçlü ve tutarlı değerlendirilmektedir ({yon_ort}/5.00); ihtiyaç duyulduğunda ulaşılabilirlik ve düzenli geri bildirim olumlu öne çıkmaktadır."
             )
         else:
             paragraflar.append(
-                f"Yönetici iletişimi ve düzenli geri bildirim sıklığı ({yon_ort}/5.00) ekip içinde gelişime açık bir alan olarak takip edilmelidir."
+                f"Yönetici iletişimi ve düzenli geri bildirim sıklığı ({yon_ort}/5.00) gelişime açık bir alan olarak takip edilmelidir."
             )
 
     if yz_ort is not None and yz_ort >= 3.5:
         paragraflar.append(
-            f"Yapay zeka araçlarının (CodeMantis, Amigo, Asistan vb.) kullanım sıklığı ({yz_ort}/5.00) geliştirme hızını ve ekip verimliliğini destekleyen unsurlar arasında yer almaktadır."
+            f"Yapay zeka araçlarının (CodeMantis, Amigo, Asistan vb.) kullanım sıklığı ({yz_ort}/5.00) geliştirme hızını ve verimliliği destekleyen unsurlar arasında yer almaktadır."
         )
 
     return " ".join(paragraflar)
@@ -1289,15 +1300,16 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
     rows_out = []
     for idx, r in enumerate(records):
         g_mapped, b_mapped = all_pairs[idx % len(all_pairs)]
-        g_val = _clean(r.get("gmy") or r.get("GMY") or r.get("GMY / Domain")) or g_mapped
-        b_val = _clean(r.get("birim") or r.get("Birim / Ekip")) or b_mapped
+        g_val = _clean(r.get("gmy") or r.get("GMY") or r.get("Genel Müdür Yardımcılığı") or r.get("GMY / Domain")) or g_mapped
+        b_val = _clean(r.get("birim") or r.get("Birim") or r.get("Birim / Ekip")) or b_mapped
         dept_val = _clean(r.get("departman") or r.get("Departman")) or DEPARTMAN_OPTIONS[idx % len(DEPARTMAN_OPTIONS)]
         bolum_val = _clean(r.get("bolum") or r.get("Bölüm")) or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]
+        yon_val = _clean(r.get("yonetici_bilgisi") or r.get("Yönetici Bilgisi")) or YONETICI_OPTIONS[idx % len(YONETICI_OPTIONS)]
         lok_val = _clean(r.get("lokasyon") or r.get("Lokasyon")) or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]
         ise_giris_val = _format_tr_date_input(r.get("ise_giris_tarihi") or r.get("İşe Giriş Tarihi")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}"
         ik_ortak_val = _clean(r.get("ik_is_ortagi") or r.get("İK İş Ortağı")) or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]
         sicil_val = _clean(r.get("sicil_no") or r.get("Sicil") or r.get("Sicil No")) or str(1001 + idx)
-        ad_soyad_val = _clean(r.get("ad_soyad") or r.get("Ad Soyad")) or f"Çalışan {idx + 1}"
+        ad_soyad_val = _clean(r.get("ad_soyad") or r.get("Ad Soyad")) or f"Kayıt {idx + 1}"
         g_tarih = _clean(r.get("gorusme_tarihi") or r.get("Görüşme Tarihi") or r.get("Görüşme Tarihi (Ay/Gün/Yıl)")) or "2026-06-04"
 
         mem = _score(r.get("p_genel_memnuniyet") if "p_genel_memnuniyet" in r else r.get("st Memnuniyeti"))
@@ -1352,9 +1364,10 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 "departman": dept_val,
                 "birim": b_val,
                 "bolum": bolum_val,
+                "yonetici_bilgisi": yon_val,
                 "lokasyon": lok_val,
                 "ise_giris_tarihi": ise_giris_val,
-                "katilimci_turu": _clean(r.get("katilimci_turu")) or "Çalışan",
+                "katilimci_turu": _clean(r.get("katilimci_turu")) or "Katılımcı",
                 "calisan_rumuzu": f"{ad_soyad_val} ({_clean(r.get('Birim')) or b_val.split('-', 1)[-1]})",
                 "calisma_modeli": _clean(r.get("calisma_modeli")) or "Hibrit",
                 "duygu_durumu": duygu,
@@ -1433,10 +1446,10 @@ def load_records() -> tuple[pd.DataFrame, str]:
                 for col, _ in PUAN_BASLIKLARI:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
-                return df, "Google Sheets (Canlı)"
-            return pd.DataFrame(columns=st.session_state.local_df.columns), "Google Sheets (Boş)"
+                return df, f"Google Sheets ({len(df)} Kayıt)"
+            return pd.DataFrame(columns=st.session_state.local_df.columns), "Google Sheets (0 Kayıt)"
         except Exception as e:
-            return st.session_state.local_df.copy(), f"Yerel/Demo Mod (Tablo hatası: {e})"
+            return st.session_state.local_df.copy(), f"Yerel Havuz ({len(st.session_state.local_df)} Kayıt) • {e}"
 
     return st.session_state.local_df.copy(), f"Yerel Havuz ({len(st.session_state.local_df)} Kayıt)"
 
@@ -1485,14 +1498,15 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
 def build_excel_template() -> bytes:
     bio = io.BytesIO()
     cols = [
-        "Sicil No",
+        "Sicil",
         "Ad Soyad",
         "Görüşme Tarihi",
         "Dönem",
-        "GMY / Domain",
+        "Genel Müdür Yardımcılığı",
         "Departman",
-        "Birim / Ekip",
+        "Birim",
         "Bölüm",
+        "Yönetici Bilgisi",
         "Lokasyon",
         "İşe Giriş Tarihi",
         "İK İş Ortağı",
@@ -1503,21 +1517,22 @@ def build_excel_template() -> bytes:
     ] + [q_lbl for _, q_lbl in TUM_METIN_SORULARI] + [p_lbl for _, p_lbl in PUAN_BASLIKLARI]
 
     sample_row = {
-        "Sicil No": "1001",
+        "Sicil": "1001",
         "Ad Soyad": "Ahmet Yılmaz",
         "Görüşme Tarihi": date.today().strftime("%d.%m.%Y"),
         "Dönem": "2026 - 2. Dönem",
-        "GMY / Domain": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
+        "Genel Müdür Yardımcılığı": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
         "Departman": "Yazılım Geliştirme Departmanı",
-        "Birim / Ekip": "10000474-Kurumsal Uygulamalar",
+        "Birim": "10000474-Kurumsal Uygulamalar",
         "Bölüm": "Ölçme ve Raporlama",
+        "Yönetici Bilgisi": "Birim Yöneticisi - 1",
         "Lokasyon": "İstanbul - Ataşehir",
         "İşe Giriş Tarihi": "14.03.2022",
         "İK İş Ortağı": "Şeyma Oruç",
         "Çalışma Modeli": "Hibrit",
         "Duygu Durumu": "Olumlu",
         "Aksiyon İhtiyacı": "Evet",
-        "Aksiyon Planı": "Çalışanın kaydına; ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
+        "Aksiyon Planı": "Ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
         "Genel Memnuniyet": 4.5,
         "Ekip Motivasyonu": 4.0,
     }
@@ -1578,8 +1593,8 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
             olumsuz_sayisi = int((grp["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in grp.columns else 0
             ozet_rows.append(
                 {
-                    "GMY / Domain": gmy_ad,
-                    "Birim / Ekip": birim_ad,
+                    "Genel Müdür Yardımcılığı": gmy_ad,
+                    "Birim": birim_ad,
                     "Görüşme Sayısı": len(grp),
                     "Genel Puan Ortalaması (1-5)": ort_skor,
                     "Olumlu Görüşme": olumlu_sayisi,
@@ -1588,7 +1603,7 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                 }
             )
     df_birim_ozet = pd.DataFrame(ozet_rows) if ozet_rows else pd.DataFrame(
-        columns=["GMY / Domain", "Birim / Ekip", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan"]
+        columns=["Genel Müdür Yardımcılığı", "Birim", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan"]
     )
 
     kriter_rows = []
@@ -1928,8 +1943,8 @@ if st.session_state.user is None:
     st.markdown(
         """
         <div class="panel-header">
-            <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> İzlenim Paylaşım Paneli</div>
-            <div style="color:#94A3B8; margin-top:0.3rem;">İK İş Ortakları için 1-1 Görüşme Veri Havuzu, Standart Dashboard ve Sunum Üretici</div>
+            <div class="panel-brand">İzlenim Paylaşım Görüşmesi</div>
+            <div style="color:#94A3B8; margin-top:0.25rem;">İK İş Ortakları için 1-1 Görüşme Veri Havuzu, Standart Dashboard ve Sunum Üretici</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1981,8 +1996,8 @@ with hdr_left:
     st.markdown(
         f"""
         <div class="panel-header">
-            <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> {sayfa}</div>
-            <div style="color:#94A3B8; margin-top:0.25rem;">Aktif Kullanıcı: <b>{user['ad_soyad']}</b> &nbsp;•&nbsp; {data_source_label}</div>
+            <div class="panel-brand">İzlenim Paylaşım Görüşmesi</div>
+            <div style="color:#94A3B8; margin-top:0.25rem; font-size:0.95rem;">{data_source_label}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2023,16 +2038,16 @@ if sayfa == "1-1 Görüşme Kayıt":
     default_sicil = str(edit_record_row.get("sicil_no", "")) if edit_record_row else ""
     with s_col1:
         sicil_input = st.text_input(
-            "Çalışan Sicil No (Örn: 1001, 1002)",
+            "Sicil (Örn: 1001, 1002)",
             value=default_sicil,
-            placeholder="Sicil numarası girin...",
+            placeholder="Sicil girin...",
         ).strip()
 
     emp_info = emp_directory.get(sicil_input) if sicil_input else None
     if sicil_input and emp_info:
-        st.success(f"Sicil bulundu: **{emp_info['ad_soyad']}** — Organizasyon ve İK iş ortağı bilgileri otomatik dolduruldu.")
+        st.success(f"Sicil bulundu: **{emp_info['ad_soyad']}** — Bilgiler otomatik getirildi; dilediğiniz alanı manuel düzenleyebilirsiniz.")
     elif sicil_input and not emp_info:
-        st.info("Bu sicil numarası katalogda bulunamadı; bilgileri aşağıdan manuel seçebilirsiniz.")
+        st.info("Bu sicil kayıt/katalogda bulunamadı; bilgileri aşağıdan manuel girebilir veya seçebilirsiniz.")
 
     def _pick_idx(opts: list[str], val: str, fallback: int = 0) -> int:
         if val and val in opts:
@@ -2040,12 +2055,14 @@ if sayfa == "1-1 Görüşme Kayıt":
         return fallback
 
     prefill = edit_record_row if edit_record_row else (emp_info if emp_info else {})
+    form_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'empty'}"
 
     with s_col2:
         ad_soyad_input = st.text_input(
-            "Çalışan Ad Soyad",
+            "Ad Soyad",
             value=str(prefill.get("ad_soyad", "")),
             placeholder="Ad Soyad",
+            key=f"inp_ad_soyad_{form_scope}",
         )
     with s_col3:
         default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=date.today())
@@ -2053,7 +2070,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Görüşme Tarihi",
             value=default_gt_date,
             format="DD.MM.YYYY",
-            key=f"inp_gorusme_tarihi_{edit_kayit_id or 'new'}_{sicil_input}",
+            key=f"inp_gorusme_tarihi_{form_scope}",
         )
     with s_col4:
         donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - 1. Çeyrek", "2026 - 2. Çeyrek", "2026 - 3. Çeyrek", "2026 - 4. Çeyrek"]
@@ -2061,70 +2078,82 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Görüşme Dönemi",
             donem_opts,
             index=_pick_idx(donem_opts, str(prefill.get("donem", "2026 - 2. Dönem")), 1),
+            key=f"inp_donem_{form_scope}",
         )
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         sec_gmy = st.selectbox(
-            "GMY / Domain",
+            "Genel Müdür Yardımcılığı",
             gmy_options,
             index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
+            key=f"inp_gmy_{form_scope}",
         )
     with c2:
         sec_departman = st.selectbox(
             "Departman",
             DEPARTMAN_OPTIONS,
             index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
+            key=f"inp_departman_{form_scope}",
         )
     with c3:
         birim_options = assigned_gmy_map.get(sec_gmy, GMY_BIRIM_MAP.get(sec_gmy, []))
         sec_birim = st.selectbox(
-            "Birim / Ekip",
+            "Birim",
             birim_options,
             index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
+            key=f"inp_birim_{form_scope}",
         )
     with c4:
         sec_bolum = st.selectbox(
             "Bölüm",
             BOLUM_OPTIONS,
             index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
+            key=f"inp_bolum_{form_scope}",
         )
 
     c5, c6, c7, c8 = st.columns(4)
     with c5:
-        sec_lokasyon = st.selectbox(
-            "Lokasyon",
-            LOKASYON_OPTIONS,
-            index=_pick_idx(LOKASYON_OPTIONS, str(prefill.get("lokasyon", "")), 0),
+        yon_val_init = str(prefill.get("yonetici_bilgisi", "") or "")
+        yon_extra = [yon_val_init] if (yon_val_init and yon_val_init not in YONETICI_OPTIONS) else []
+        yon_opts = YONETICI_OPTIONS + yon_extra
+        sec_yonetici = st.selectbox(
+            "Yönetici Bilgisi",
+            yon_opts,
+            index=_pick_idx(yon_opts, yon_val_init, 0),
+            key=f"inp_yonetici_{form_scope}",
         )
     with c6:
         ise_giris_str = st.text_input(
             "İşe Giriş Tarihi",
             value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
             placeholder="GG.AA.YYYY",
+            key=f"inp_ise_giris_{form_scope}",
         )
     with c7:
         sec_ik_ortagi = st.selectbox(
             "İK İş Ortağı",
             IK_IS_ORTAGI_OPTIONS,
             index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
+            key=f"inp_ik_ortagi_{form_scope}",
         )
     with c8:
-        model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
-        calisma_modeli = st.selectbox(
-            "Çalışma Modeli",
-            model_opts,
-            index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
+        sec_lokasyon = st.selectbox(
+            "Lokasyon",
+            LOKASYON_OPTIONS,
+            index=_pick_idx(LOKASYON_OPTIONS, str(prefill.get("lokasyon", "")), 0),
+            key=f"inp_lokasyon_{form_scope}",
         )
 
     st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-    d_col1, d_col2 = st.columns([1.2, 1.2])
+    d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
     with d_col1:
         duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
         duygu_durumu = st.selectbox(
             "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
             duygu_opts,
             index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
+            key=f"inp_duygu_{form_scope}",
         )
     with d_col2:
         has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
@@ -2134,6 +2163,15 @@ if sayfa == "1-1 Görüşme Kayıt":
             "Aksiyon İhtiyacı Var mı?",
             aksiyon_opts,
             index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
+            key=f"inp_aksiyon_ihtiyac_{form_scope}",
+        )
+    with d_col3:
+        model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
+        calisma_modeli = st.selectbox(
+            "Çalışma Modeli",
+            model_opts,
+            index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
+            key=f"inp_calisma_modeli_{form_scope}",
         )
 
     st.markdown("##### 📝 Aksiyon Planı")
@@ -2141,8 +2179,8 @@ if sayfa == "1-1 Görüşme Kayıt":
         "Aksiyon Planı",
         value=str(prefill.get("aksiyon_notu", "") or ""),
         height=82,
-        placeholder="Örn: Çalışanın kaydına; ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
-        key=f"inp_aksiyon_plani_{edit_kayit_id or 'new'}_{sicil_input}",
+        placeholder="Örn: Ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
+        key=f"inp_aksiyon_plani_{form_scope}",
     )
 
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -2233,9 +2271,10 @@ if sayfa == "1-1 Görüşme Kayıt":
             "departman": sec_departman,
             "birim": sec_birim,
             "bolum": sec_bolum,
+            "yonetici_bilgisi": sec_yonetici,
             "lokasyon": sec_lokasyon,
             "ise_giris_tarihi": ise_giris_formatted,
-            "katilimci_turu": "Çalışan",
+            "katilimci_turu": "Katılımcı",
             "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
             "calisma_modeli": calisma_modeli,
             "duygu_durumu": duygu_durumu,
@@ -2264,28 +2303,25 @@ elif sayfa == "Standart Dashboard & Sunum":
     st.markdown("#### 🔎 Detaylı Filtreleme")
     f1, f2, f3, f4 = st.columns(4)
     with f1:
-        sel_gmy_f = st.selectbox("GMY / Domain", ["Tümü"] + gmy_options)
+        sel_gmy_f = st.selectbox("Genel Müdür Yardımcılığı", ["Tümü"] + gmy_options)
     with f2:
         dept_vals = sorted(df_scoped["departman"].dropna().unique().tolist()) if "departman" in df_scoped.columns and not df_scoped.empty else DEPARTMAN_OPTIONS
         sel_dept_f = st.selectbox("Departman", ["Tümü"] + dept_vals)
     with f3:
         birim_filter_opts = ["Tümü"] + (allowed_birimler if sel_gmy_f == "Tümü" else assigned_gmy_map.get(sel_gmy_f, []))
-        sel_birim_f = st.selectbox("Birim / Ekip", birim_filter_opts)
+        sel_birim_f = st.selectbox("Birim", birim_filter_opts)
     with f4:
         bolum_vals = sorted(df_scoped["bolum"].dropna().unique().tolist()) if "bolum" in df_scoped.columns and not df_scoped.empty else BOLUM_OPTIONS
         sel_bolum_f = st.selectbox("Bölüm", ["Tümü"] + bolum_vals)
 
-    f5, f6, f7, f8 = st.columns(4)
+    f5, f6, f7 = st.columns(3)
     with f5:
-        lok_vals = sorted(df_scoped["lokasyon"].dropna().unique().tolist()) if "lokasyon" in df_scoped.columns and not df_scoped.empty else LOKASYON_OPTIONS
-        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + lok_vals)
-    with f6:
         tarih_vals = sorted(df_scoped["gorusme_tarihi"].dropna().unique().tolist()) if "gorusme_tarihi" in df_scoped.columns and not df_scoped.empty else []
         sel_tarih_f = st.selectbox("Görüşme Tarihi", ["Tümü"] + tarih_vals)
-    with f7:
+    with f6:
         donem_vals = sorted(df_scoped["donem"].dropna().unique().tolist()) if "donem" in df_scoped.columns and not df_scoped.empty else ["2026 - 2. Dönem"]
         sel_donem_f = st.selectbox("Görüşme Dönemi", ["Tümü"] + donem_vals)
-    with f8:
+    with f7:
         ik_vals = sorted(df_scoped["ik_is_ortagi"].dropna().unique().tolist()) if "ik_is_ortagi" in df_scoped.columns and not df_scoped.empty else IK_IS_ORTAGI_OPTIONS
         sel_ik_f = st.selectbox("İK İş Ortağı", ["Tümü"] + ik_vals)
 
@@ -2299,8 +2335,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             df_view = df_view[df_view["birim"] == sel_birim_f]
         if sel_bolum_f != "Tümü" and "bolum" in df_view.columns:
             df_view = df_view[df_view["bolum"] == sel_bolum_f]
-        if sel_lok_f != "Tümü" and "lokasyon" in df_view.columns:
-            df_view = df_view[df_view["lokasyon"] == sel_lok_f]
         if sel_tarih_f != "Tümü" and "gorusme_tarihi" in df_view.columns:
             df_view = df_view[df_view["gorusme_tarihi"] == sel_tarih_f]
         if sel_donem_f != "Tümü" and "donem" in df_view.columns:
@@ -2461,7 +2495,7 @@ elif sayfa == "Standart Dashboard & Sunum":
             return round(float(s.mean()), 2) if not s.empty else 0.0
 
         comp_rows = [
-            {"Kriter": "Softtech'e Aidiyet / Genel Memnuniyet", "2025 Sonuçları": 4.10, "2026 Sonuçları": _col_avg("p_genel_memnuniyet")},
+            {"Kriter": "Genel Memnuniyet / Aidiyet", "2025 Sonuçları": 4.10, "2026 Sonuçları": _col_avg("p_genel_memnuniyet")},
             {"Kriter": "Ücret Motivasyonu", "2025 Sonuçları": 3.40, "2026 Sonuçları": _col_avg("p_ucret_yan_hak")},
             {"Kriter": "Ekip Motivasyonu", "2025 Sonuçları": 3.50, "2026 Sonuçları": _col_avg("p_ekip_motivasyonu")},
             {"Kriter": "Kendi Motivasyonu", "2025 Sonuçları": 3.70, "2026 Sonuçları": _col_avg("p_kendi_motivasyonu")},
@@ -2731,7 +2765,7 @@ elif sayfa == "Standart Dashboard & Sunum":
         if aktif_birimler:
             yon_table_rows = [
                 {
-                    "Birim / Ekip": b["birim"],
+                    "Birim": b["birim"],
                     "Görüşme Sayısı": b["gorusme_sayisi"],
                     "1. Yönetici İletişimi Puanı (1-5)": b["yonetici_iletisim_puani"] if b["yonetici_iletisim_puani"] is not None else "-",
                     "Genel Durum": b["durum"],
