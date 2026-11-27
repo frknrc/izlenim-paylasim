@@ -2016,7 +2016,7 @@ assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
 # Üst başlık + sağ köşede genel duygu ifadesi ve yüzde dağılımı
-hdr_left, hdr_right = st.columns([2.7, 1.3], vertical_alignment="stretch")
+hdr_left, hdr_right = st.columns([2.7, 1.3])
 with hdr_left:
     st.markdown(
         f"""
