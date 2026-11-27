@@ -2769,7 +2769,16 @@ elif is_presentation_mod:
         dept_vals = sorted(df_scoped["departman"].dropna().unique().tolist()) if "departman" in df_scoped.columns and not df_scoped.empty else DEPARTMAN_OPTIONS
         sel_dept_f = st.selectbox("Departman", ["Tümü"] + dept_vals)
     with f3:
-        birim_filter_opts = ["Tümü"] + (allowed_birimler if sel_gmy_f == "Tümü" else assigned_gmy_map.get(sel_gmy_f, []))
+        if sel_gmy_f == "Tümü":
+            veri_birimler = sorted(df_scoped["birim"].dropna().unique().tolist()) if "birim" in df_scoped.columns and not df_scoped.empty else []
+            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(allowed_birimler + veri_birimler))
+        else:
+            veri_gmy_birimler = (
+                sorted(df_scoped[df_scoped["gmy"] == sel_gmy_f]["birim"].dropna().unique().tolist())
+                if "gmy" in df_scoped.columns and "birim" in df_scoped.columns and not df_scoped.empty
+                else []
+            )
+            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(assigned_gmy_map.get(sel_gmy_f, []) + veri_gmy_birimler))
         sel_birim_f = st.selectbox("Birim", birim_filter_opts)
     with f4:
         bolum_vals = sorted(df_scoped["bolum"].dropna().unique().tolist()) if "bolum" in df_scoped.columns and not df_scoped.empty else BOLUM_OPTIONS
@@ -3003,6 +3012,11 @@ elif is_presentation_mod:
                     dt_key = f"aks_done_dt_{uid_tag}"
                     nt_key = f"aks_done_nt_{uid_tag}"
                     err_key = f"aks_done_err_{uid_tag}"
+                    reset_flag_key = f"aks_reset_chk_{uid_tag}"
+
+                    if st.session_state.pop(reset_flag_key, False):
+                        st.session_state[chk_key] = False
+                        st.session_state[nt_key] = ""
 
                     if chk_key not in st.session_state:
                         st.session_state[chk_key] = False
@@ -3025,7 +3039,7 @@ elif is_presentation_mod:
                     with row_chk_col:
                         st.checkbox("Tamamlandı", key=chk_key)
 
-                    if st.session_state[chk_key]:
+                    if st.session_state.get(chk_key, False):
                         with st.container():
                             f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
                             with f_dt_col:
@@ -3041,12 +3055,12 @@ elif is_presentation_mod:
                                     note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
                                     dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=now_local().date()).strftime("%d.%m.%Y")
                                     if not _has_completion_note(note_input_val):
-                                        st.session_state[chk_key] = False
+                                        st.session_state[reset_flag_key] = True
                                         st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon kapatılamaz!"
                                         st.rerun()
                                     else:
                                         st.session_state.pop(err_key, None)
-                                        st.session_state[chk_key] = False
+                                        st.session_state[reset_flag_key] = True
                                         update_action_completion_record(
                                             kayit_id=item_aks["kayit_id"],
                                             sicil_no=item_aks["sicil_no"],
@@ -3091,7 +3105,7 @@ elif is_presentation_mod:
                         )
                     with c_reopen:
                         if st.button("↩ Yeniden Aç", key=f"reopen_aks_{uid_tag}", use_container_width=True):
-                            st.session_state[f"aks_done_chk_{uid_tag}"] = False
+                            st.session_state[f"aks_reset_chk_{uid_tag}"] = True
                             update_action_completion_record(
                                 kayit_id=item_aks["kayit_id"],
                                 sicil_no=item_aks["sicil_no"],
