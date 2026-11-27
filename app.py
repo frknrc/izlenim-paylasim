@@ -53,10 +53,15 @@ st.markdown(
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea,
         .stSelectbox > div > div > div,
-        .stMultiSelect > div > div > div {{
+        .stMultiSelect > div > div > div,
+        .stNumberInput > div > div > input,
+        div[data-testid="stDateInput"] input {{
             background-color: #0F172A !important;
             color: {TEXT_LIGHT} !important;
             border-color: {CARD_BORDER} !important;
+        }}
+        div[data-testid="stDateInput"] > div {{
+            max-width: 240px;
         }}
         .stButton > button, .stDownloadButton > button {{
             background: linear-gradient(90deg, {TEAL_SOFT} 0%, {PURPLE} 100%);
@@ -306,6 +311,132 @@ PUAN_BASLIKLARI = [
 
 HALF_STEP_SCORE_OPTIONS = ["Boş", 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
+
+def _parse_date_safe(val: object, fallback: date | None = None) -> date:
+    """Farklı tarih formatlarını (YYYY-MM-DD, DD.MM.YYYY vb.) güvenli şekilde date objesine çevirir."""
+    default_d = fallback if fallback is not None else date.today()
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    if val is None:
+        return default_d
+    s = str(val).strip()
+    if not s:
+        return default_d
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(s[:10], fmt).date()
+        except ValueError:
+            continue
+    return default_d
+
+
+def _snap_half_step(raw_val: object) -> float | None:
+    """Sayısal değeri 1.0 - 5.0 aralığında 0.5 adımlarına yuvarlar; geçersiz/boş ise None döner."""
+    if raw_val is None or raw_val == "":
+        return None
+    if isinstance(raw_val, str) and raw_val.strip().lower() in ("boş", "bos", "none", "nan"):
+        return None
+    try:
+        if isinstance(raw_val, float) and np.isnan(raw_val):
+            return None
+        f_val = float(str(raw_val).replace(",", "."))
+        if np.isnan(f_val):
+            return None
+        clamped = max(1.0, min(5.0, f_val))
+        snapped = round(clamped * 2.0) / 2.0
+        return float(max(1.0, min(5.0, snapped)))
+    except Exception:
+        return None
+
+
+def render_synced_score_row(p_key: str, p_label: str, default_val: float | None, scope_tag: str):
+    """
+    1-5 puanlama için bar (st.select_slider) ile yanında manuel girişi (st.number_input + Boş/Aktif)
+    çift yönlü senkronize eder. Manuel puan girildiğinde bar anında güncellenir.
+    """
+    state_key = f"score_val_{scope_tag}_{p_key}"
+    bar_key = f"score_bar_{scope_tag}_{p_key}"
+    num_key = f"score_num_{scope_tag}_{p_key}"
+    active_key = f"score_active_{scope_tag}_{p_key}"
+
+    if state_key not in st.session_state:
+        st.session_state[state_key] = default_val
+
+    cur_val = st.session_state[state_key]
+    if bar_key not in st.session_state:
+        st.session_state[bar_key] = cur_val if cur_val is not None else "Boş"
+    if num_key not in st.session_state:
+        st.session_state[num_key] = float(cur_val) if cur_val is not None else 3.0
+    if active_key not in st.session_state:
+        st.session_state[active_key] = cur_val is not None
+
+    def _on_bar_change():
+        b_val = st.session_state[bar_key]
+        if b_val == "Boş":
+            st.session_state[state_key] = None
+            st.session_state[active_key] = False
+        else:
+            f_val = _snap_half_step(b_val)
+            st.session_state[state_key] = f_val
+            st.session_state[active_key] = f_val is not None
+            if f_val is not None:
+                st.session_state[num_key] = f_val
+
+    def _on_num_change():
+        n_val = _snap_half_step(st.session_state[num_key])
+        if n_val is None:
+            n_val = 3.0
+        st.session_state[num_key] = n_val
+        st.session_state[state_key] = n_val
+        st.session_state[active_key] = True
+        st.session_state[bar_key] = n_val
+
+    def _on_toggle_change():
+        if not st.session_state[active_key]:
+            st.session_state[state_key] = None
+            st.session_state[bar_key] = "Boş"
+        else:
+            f_val = _snap_half_step(st.session_state[num_key]) or 3.0
+            st.session_state[num_key] = f_val
+            st.session_state[state_key] = f_val
+            st.session_state[bar_key] = f_val
+
+    st.markdown(f"**{p_label}**")
+    c_bar, c_num, c_chk = st.columns([4.5, 1.4, 1.1], vertical_alignment="center")
+
+    with c_bar:
+        st.select_slider(
+            f"{p_label} Bar",
+            options=HALF_STEP_SCORE_OPTIONS,
+            key=bar_key,
+            on_change=_on_bar_change,
+            label_visibility="collapsed",
+        )
+
+    with c_num:
+        st.number_input(
+            f"{p_label} Manuel",
+            min_value=1.0,
+            max_value=5.0,
+            step=0.5,
+            format="%.1f",
+            key=num_key,
+            on_change=_on_num_change,
+            label_visibility="collapsed",
+        )
+
+    with c_chk:
+        st.checkbox(
+            "Puanlı",
+            key=active_key,
+            on_change=_on_toggle_change,
+        )
+
+    return st.session_state[state_key]
+
+
 HISTORICAL_2025_BENCHMARKS = {
     "Softtech'e Aidiyet / Genel Memnuniyet": 4.1,
     "Ücret Motivasyonu": 3.4,
@@ -452,7 +583,6 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
                 "ik_is_ortagi": str(row.get("ik_is_ortagi", "") or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]),
             }
 
-    # Örnek test sicilleri de her zaman hazır olsun
     sample_extra = {
         "1001": {
             "sicil_no": "1001",
@@ -696,7 +826,6 @@ def _analyze_questions_impl(df_source: pd.DataFrame) -> list[dict]:
 
 
 def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos: list[str], top_neg: list[str]) -> str:
-    """Slayt 11 tarzında birim özelinde tüm yorumların genel metin özetini üretir."""
     if df_b.empty:
         return f"{unit_name} birimi için henüz kayıtlı görüşme yorumu bulunmamaktadır."
 
@@ -857,7 +986,6 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
 
 
 def _compute_6_dept_criteria(df_view: pd.DataFrame) -> list[dict]:
-    """Slayt 6'daki 6 Departman Değerlendirme Kriteri için özet metrik ve durum üretir."""
     def _mean_col(col_name: str):
         if df_view.empty or col_name not in df_view.columns:
             return None
@@ -878,7 +1006,6 @@ def _compute_6_dept_criteria(df_view: pd.DataFrame) -> list[dict]:
     yz_p = _mean_col("p_yz_kullanim")
     gmy_p = _mean_col("p_gmy_iletisimi")
 
-    # Harmony & Toplandığımıza Değsin için metin bazlı pozitiflik oranı
     def _text_pos_ratio(col_name: str) -> tuple[int, int]:
         if df_view.empty or col_name not in df_view.columns:
             return 0, 0
@@ -943,7 +1070,6 @@ def _compute_6_dept_criteria(df_view: pd.DataFrame) -> list[dict]:
 
 
 def _compute_4_team_criteria(df_view: pd.DataFrame) -> list[dict]:
-    """Slayt 7'deki 4 Ekip Değerlendirme Kriteri için metrik üretir."""
     def _mean_col(col_name: str):
         if df_view.empty or col_name not in df_view.columns:
             return None
@@ -1236,7 +1362,6 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
 
 
 def build_excel_template() -> bytes:
-    """Toplu içe aktarma için örnek kolon başlıklarını içeren Excel şablonu üretir."""
     bio = io.BytesIO()
     cols = [
         "Sicil No",
@@ -1416,14 +1541,12 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
 
 
 def build_pdf_summary_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: str, dept_analiz: dict) -> bytes:
-    """Dashboard sunum ve birim özetlerini içeren sade, temiz PDF çıktısı üretir."""
     from matplotlib.backends.backend_pdf import PdfPages
     import matplotlib.pyplot as plt
     import textwrap
 
     bio = io.BytesIO()
     with PdfPages(bio) as pdf:
-        # Sayfa 1: Genel Özet & 2025-2026 Puan Karşılaştırması
         fig, ax = plt.subplots(figsize=(11.69, 8.27))
         fig.patch.set_facecolor("#0B111E")
         ax.set_facecolor("#0B111E")
@@ -1455,7 +1578,6 @@ def build_pdf_summary_report(df_filtered: pd.DataFrame, secili_gmy: str, secili_
         pdf.savefig(fig)
         plt.close(fig)
 
-        # Sayfa 2+: Birimler Arası Detaylı Metin Özeti (Slayt 11 formatı)
         aktif_birimler = [b for b in (dept_analiz.get("birimler") or []) if b.get("gorusme_sayisi", 0) > 0]
         if not aktif_birimler:
             aktif_birimler = (dept_analiz.get("birimler") or [])[:6]
@@ -1573,7 +1695,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     total_slides = 5 + max(1, len(birim_gruplari)) + max(1, len(ozet_gruplari))
     slide_counter = 1
 
-    # Slayt 1: Executive Summary & Duygu/Aksiyon Özeti
     n_kisi = len(df_filtered)
     aksiyon_adet = int((df_filtered["aksiyon_ihtiyaci"] == "Evet").sum()) if "aksiyon_ihtiyaci" in df_filtered.columns and not df_filtered.empty else 0
     olumsuz_adet = int((df_filtered["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in df_filtered.columns and not df_filtered.empty else 0
@@ -1598,7 +1719,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
         c_purple,
     )
 
-    # Slayt 2: 2025 vs 2026 Karşılaştırmalı Puanlama (Slayt 9-10)
     s2 = prs.slides.add_slide(blank_layout)
     add_header(s2, slide_counter, total_slides, "İzlenim Paylaşım Puanlaması (2025 vs 2026 Karşılaştırması)", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -1620,7 +1740,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     ]
     add_card(s2, 0.6, 1.35, 12.1, 5.2, "2025 ve 2026 Karşılaştırmalı Sonuçlar (1-5 Puan)", comp_lines, c_teal, font_pt=12.0)
 
-    # Slayt 3: Departman Değerlendirme Kriterleri (6 Başlık - Slayt 6)
     s3 = prs.slides.add_slide(blank_layout)
     add_header(s3, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Departman (6 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -1633,7 +1752,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
             c_teal if i % 2 == 0 else c_purple, font_pt=9.5,
         )
 
-    # Slayt 4: Ekip Değerlendirme Kriterleri (4 Başlık - Slayt 7)
     s4 = prs.slides.add_slide(blank_layout)
     add_header(s4, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Ekip (4 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
@@ -1646,7 +1764,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
             c_teal if i % 2 == 0 else c_purple, font_pt=10.0,
         )
 
-    # Slayt 5+: Birim Bazlı Olumlu / Olumsuz & Yönetici İletişim Puanı (Slayt 8)
     for b_idx, b_grp in enumerate(birim_gruplari, start=1):
         s_b = prs.slides.add_slide(blank_layout)
         add_header(s_b, slide_counter, total_slides, f"Birimler Arası Değerlendirme & Yönetici İletişimi ({b_idx}/{len(birim_gruplari)})", f"{secili_gmy}  |  Dönem: {secili_donem}")
@@ -1665,7 +1782,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
                 c_purple if "Dikkat" in b_item["durum"] else c_teal, font_pt=9.5,
             )
 
-    # Slayt 6+: Birimler Arası Detaylı Metin Özeti (Slayt 11)
     for o_idx, o_grp in enumerate(ozet_gruplari, start=1):
         s_o = prs.slides.add_slide(blank_layout)
         add_header(s_o, slide_counter, total_slides, f"Birimler Arası Detaylı Değerlendirme — Metin Özeti ({o_idx}/{len(ozet_gruplari)})", f"{secili_gmy}  |  Dönem: {secili_donem}")
@@ -1679,7 +1795,6 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
                 c_teal if slot_i % 2 == 0 else c_purple, font_pt=9.5,
             )
 
-    # Son Slayt: Aksiyon Planı
     s_last = prs.slides.add_slide(blank_layout)
     add_header(s_last, slide_counter, total_slides, "İK Önerileri ve Aksiyon Planları", f"{secili_gmy}  |  Dönem: {secili_donem}")
     aksiyonlar = df_filtered[df_filtered["aksiyon_ihtiyaci"] == "Evet"] if "aksiyon_ihtiyaci" in df_filtered.columns and not df_filtered.empty else pd.DataFrame()
@@ -1764,7 +1879,6 @@ assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
 if sayfa == "1-1 Görüşme Kayıt":
-    # Mevcut kaydı düzenleme seçimi (Slayt 2 & 3: kaydetme + düzenlemek istediğimizde güncelleme)
     st.markdown("#### 🔍 Kayıt Seçimi veya Yeni Görüşme Başlatma")
     mode_col1, mode_col2 = st.columns([1.2, 2])
     with mode_col1:
@@ -1790,7 +1904,6 @@ if sayfa == "1-1 Görüşme Kayıt":
             if not matched_df.empty:
                 edit_record_row = matched_df.iloc[0].to_dict()
 
-    # Slayt 1: Çalışan sicili girildiğinde GMY, departman, birim, bölüm, lokasyon, işe giriş tarihi, İK iş ortağı otomatik gelsin
     s_col1, s_col2, s_col3, s_col4 = st.columns(4)
     default_sicil = str(edit_record_row.get("sicil_no", "")) if edit_record_row else ""
     with s_col1:
@@ -1820,12 +1933,13 @@ if sayfa == "1-1 Görüşme Kayıt":
             placeholder="Ad Soyad",
         )
     with s_col3:
-        # Slayt 1: Görüşmenin yapıldığı tarih manuel girilmeli
-        default_gt_str = str(prefill.get("gorusme_tarihi", ""))
-        gorusme_tarihi_str = st.text_input(
-            "Görüşme Tarihi (Manuel Giriniz - GG.AA.YYYY / YYYY-AA-GG)",
-            value=default_gt_str if default_gt_str else date.today().strftime("%d.%m.%Y"),
-            placeholder="Örn: 27.11.2026",
+        # Görüşme Tarihi: tıklandığında açılan takvim seçici
+        default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=date.today())
+        gorusme_tarihi_dt = st.date_input(
+            "Görüşme Tarihi",
+            value=default_gt_date,
+            format="DD.MM.YYYY",
+            key=f"inp_gorusme_tarihi_{edit_kayit_id or 'new'}_{sicil_input}",
         )
     with s_col4:
         donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - Q1", "2026 - Q2", "2026 - Q3", "2026 - Q4"]
@@ -1889,7 +2003,6 @@ if sayfa == "1-1 Görüşme Kayıt":
             index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
         )
 
-    # Slayt 4: Ek bir alanda duygu durumu alanı ve aksiyon planı alanı olmalı
     st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
     d_col1, d_col2, d_col3 = st.columns([1, 1, 2])
     with d_col1:
@@ -1914,11 +2027,10 @@ if sayfa == "1-1 Görüşme Kayıt":
             placeholder="Örn: Çalışan iş tatmini konusunda sorun yaşadığını, ekip değişikliği talebi olduğunu paylaşmıştır. Yöneticisi ile görüşülerek toplantı organize edilecek.",
         )
 
-    # Slayt 2 & 3: Her soru için ayrı cevap alanı + buçuklu puanlama (1, 1.5, ..., 5) + Excel import
     tab1, tab2, tab3, tab4 = st.tabs([
         "💬 15 Görüşme Sorusu",
         "🏢 İnsan Kaynakları & Kapanış",
-        "⭐ 1-5 Puanlama (Buçuklu)",
+        "⭐ 1-5 Puanlama (Bar + Manuel Giriş)",
         "📥 Excel'den Veri İçe Aktar",
     ])
 
@@ -1951,23 +2063,14 @@ if sayfa == "1-1 Görüşme Kayıt":
         )
 
     with tab3:
-        st.caption("Puanlama ölçeği: 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 (Boş bırakılanlar ortalamaya dahil edilmez).")
+        st.caption(
+            "Puanı aşağıdaki bardan seçebilir veya sağdaki alana manuel (1.0 - 5.0 arası, 0.5 adımlı) girebilirsiniz; "
+            "manuel puan girildiğinde bar otomatik olarak güncellenir."
+        )
+        score_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'default'}"
         for p_key, p_label in PUAN_BASLIKLARI:
-            raw_p = prefill.get(p_key, None)
-            default_opt = "Boş"
-            if raw_p is not None and raw_p != "" and not (isinstance(raw_p, float) and np.isnan(raw_p)):
-                try:
-                    f_val = round(float(raw_p) * 2) / 2
-                    if f_val in HALF_STEP_SCORE_OPTIONS:
-                        default_opt = f_val
-                except Exception:
-                    default_opt = "Boş"
-            p_scores[p_key] = st.select_slider(
-                p_label,
-                options=HALF_STEP_SCORE_OPTIONS,
-                value=default_opt,
-                key=f"inp_{p_key}_{edit_kayit_id or 'new'}",
-            )
+            default_p = _snap_half_step(prefill.get(p_key, None))
+            p_scores[p_key] = render_synced_score_row(p_key, p_label, default_p, score_scope)
 
     with tab4:
         st.markdown("Excel'de tutulan mevcut görüşme kayıtlarını tek seferde havuza aktarabilirsiniz.")
@@ -1993,12 +2096,13 @@ if sayfa == "1-1 Görüşme Kayıt":
     if st.button(btn_label, type="primary", use_container_width=True):
         final_kayit_id = edit_kayit_id if edit_kayit_id else datetime.now().strftime("%Y%m%d-%H%M%S")
         final_ad = ad_soyad_input.strip() or (emp_info["ad_soyad"] if emp_info else "Anonim")
+        g_tarih_formatted = gorusme_tarihi_dt.strftime("%Y-%m-%d")
         new_record = {
             "kayit_id": final_kayit_id,
             "sicil_no": sicil_input or final_kayit_id,
             "ad_soyad": final_ad,
-            "gorusme_tarihi": gorusme_tarihi_str.strip(),
-            "kayit_zamani": f"{gorusme_tarihi_str.strip()} {datetime.now().strftime('%H:%M')}",
+            "gorusme_tarihi": g_tarih_formatted,
+            "kayit_zamani": f"{g_tarih_formatted} {datetime.now().strftime('%H:%M')}",
             "donem": sec_donem,
             "hrbp_kullanici": user["username"],
             "ik_is_ortagi": sec_ik_ortagi,
@@ -2019,7 +2123,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "q_kapanis": q_kapanis.strip(),
             **{k: v.strip() for k, v in q_answers.items()},
             **{k: v.strip() for k, v in ik_answers.items()},
-            **{k: (None if v == "Boş" else float(v)) for k, v in p_scores.items()},
+            **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
         }
         ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
         if ok:
@@ -2034,7 +2138,6 @@ elif sayfa == "Standart Dashboard & Sunum":
     else:
         df_scoped = df_all.copy()
 
-    # Slayt 5: GMY, departman, birim, bölüm, lokasyon, görüşme tarihi ve dönemi, ik iş ortağı alanlarından filtrelenmeli
     st.markdown("#### 🔎 Detaylı Filtreleme")
     f1, f2, f3, f4 = st.columns(4)
     with f1:
@@ -2082,7 +2185,6 @@ elif sayfa == "Standart Dashboard & Sunum":
         if sel_ik_f != "Tümü" and "ik_is_ortagi" in df_view.columns:
             df_view = df_view[df_view["ik_is_ortagi"] == sel_ik_f]
 
-    # Slayt 4 & 5: Toplam görüşülen kişi sayısı, aksiyon planlama sayısı, duygu durumu analizi alanları
     k1, k2, k3, k4 = st.columns(4)
     puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_view.columns]
     genel_ort = (
@@ -2113,13 +2215,11 @@ elif sayfa == "Standart Dashboard & Sunum":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Analiz cache
     dept_cache_key = f"dept_{_df_fingerprint(df_view)}_{sel_gmy_f}"
     if dept_cache_key not in st.session_state:
         st.session_state[dept_cache_key] = _analyze_department_impl(df_view, sel_gmy_f)
     dept_res = st.session_state[dept_cache_key]
 
-    # Slayt 5: PPT ve PDF formatında dashboard sunumdaki veriler alınabilsin
     exp_c1, exp_c2 = st.columns(2)
     with exp_c1:
         pptx_state_key = f"pptx_{_df_fingerprint(df_view)}_{sel_gmy_f}_{sel_donem_f}"
@@ -2159,7 +2259,6 @@ elif sayfa == "Standart Dashboard & Sunum":
     if df_view.empty:
         st.info("Seçili filtrelere uygun görüşme kaydı bulunamadı.")
     else:
-        # Slayt 4: Duygu durumu ve Aksiyon planı grafikleri yan yana
         ch_left, ch_right = st.columns(2)
         with ch_left:
             st.subheader("Duygu Durumu Dağılımı")
@@ -2193,7 +2292,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             fig_aks.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, showlegend=False, height=270, margin=dict(l=10, r=10, t=20, b=20))
             st.plotly_chart(fig_aks, use_container_width=True)
 
-        # Slayt 9 & 10: 2025 ve 2026 Karşılaştırmalı Puanlama Alanı
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📈 İzlenim Paylaşım Puanlaması — 2025 vs 2026 Karşılaştırması")
 
@@ -2231,7 +2329,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             fig_comp.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, height=310, margin=dict(l=10, r=10, t=15, b=15))
             st.plotly_chart(fig_comp, use_container_width=True)
 
-        # Slayt 6: Departman Bazında 6 Değerlendirme Kriteri Gösterimi
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("🏛️ Departman Değerlendirme Kriterleri (6 Başlık)")
         dept_6_cards = _compute_6_dept_criteria(df_view)
@@ -2251,7 +2348,6 @@ elif sayfa == "Standart Dashboard & Sunum":
                     unsafe_allow_html=True,
                 )
 
-        # Slayt 7: Ekip Bazında 4 Değerlendirme Kriteri + Öne Çıkan Olumlu / Olumsuz Yorumlar
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("👥 Ekip Değerlendirme Kriterleri (4 Başlık) & Öne Çıkan Yorumlar")
         ekip_4_cards = _compute_4_team_criteria(df_view)
@@ -2279,7 +2375,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             for item in dept_res.get("olumsuz") or ["Kayıtlı olumsuz ifade bulunmuyor"]:
                 st.markdown(f"- {item}")
 
-        # Slayt 8: Birimler Arası Detaylı Değerlendirme — Yönetici İletişim Puan Tablosu + Birim Kartları
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Birimler Arası Detaylı Değerlendirme & Yönetici İletişim Puanları")
         birimler_all = dept_res.get("birimler") or []
@@ -2297,7 +2392,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             ]
             st.dataframe(pd.DataFrame(yon_table_rows), use_container_width=True, hide_index=True)
 
-        # Slayt 11: Birim Özelinde Tüm Yorumların Metin Olarak Genel Özeti
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📝 Birim Özelinde Tüm Yorumların Genel Metin Özeti")
         gosterilecek_birimler = aktif_birimler if aktif_birimler else birimler_all[:8]
@@ -2325,7 +2419,6 @@ elif sayfa == "Standart Dashboard & Sunum":
                 unsafe_allow_html=True,
             )
 
-        # Slayt 5 (8. slayt notu): Tüm birimlere ait verileri ayrı ayrı detaylı metin halinde yazdırabilme
         st.markdown("<br>", unsafe_allow_html=True)
         with st.expander("🖨️ Tüm Birimlere Ait Verileri Ayrı Ayrı Detaylı Metin Halinde Görüntüle / Kopyala"):
             detay_bloklar = []
