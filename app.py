@@ -2399,293 +2399,314 @@ if sayfa == "1-1 Görüşme Kayıt":
             placeholder="Sicil girin...",
         ).strip()
 
-    emp_info = emp_directory.get(sicil_input) if sicil_input else None
-    if sicil_input and emp_info:
-        st.success(f"Sicil bulundu: **{emp_info['ad_soyad']}** — Bilgiler otomatik getirildi; dilediğiniz alanı manuel düzenleyebilirsiniz.")
-    elif sicil_input and not emp_info:
-        st.info("Bu sicil kayıt/katalogda bulunamadı; bilgileri aşağıdan manuel girebilir veya seçebilirsiniz.")
+    existing_sicil_set = set()
+    if not df_all.empty and "sicil_no" in df_all.columns:
+        for idx_r, r_row in df_all.iterrows():
+            s_val = str(r_row.get("sicil_no", "") or "").strip()
+            k_val = str(r_row.get("kayit_id", "") or "").strip()
+            if not s_val:
+                continue
+            if edit_kayit_id and k_val == str(edit_kayit_id).strip():
+                continue
+            existing_sicil_set.add(s_val)
 
-    def _pick_idx(opts: list[str], val: str, fallback: int = 0) -> int:
-        if val and val in opts:
-            return opts.index(val)
-        return fallback
+    is_duplicate_sicil = bool(sicil_input) and (sicil_input in existing_sicil_set)
 
-    prefill = dict(edit_record_row) if edit_record_row else (dict(emp_info) if emp_info else {})
-    if sicil_input:
-        prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
-    form_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'empty'}"
+    if is_duplicate_sicil:
+        st.error(
+            f"**{sicil_input}** siciline ait kayıt zaten havuzda mevcut! "
+            "Siciller birbirinden farklı olmalıdır. Farklı bir sicil girene kadar diğer bilgi alanları kapalıdır ve kayıt yapılamaz."
+        )
+    else:
+        emp_info = emp_directory.get(sicil_input) if sicil_input else None
+        if sicil_input and emp_info:
+            st.success(f"Sicil uygun (**{sicil_input}** — {emp_info['ad_soyad']}); bilgileri girebilir veya düzenleyebilirsiniz.")
+        elif sicil_input and not emp_info:
+            st.info("Bu sicil daha önce kullanılmamış; bilgileri aşağıdan girebilir veya seçebilirsiniz.")
 
-    with s_col2:
-        ad_soyad_input = st.text_input(
-            "Ad Soyad",
-            value=str(prefill.get("ad_soyad", "")),
-            placeholder="Ad Soyad",
-            key=f"inp_ad_soyad_{form_scope}",
-        )
-    with s_col3:
-        default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=now_local().date())
-        gorusme_tarihi_dt = st.date_input(
-            "Görüşme Tarihi",
-            value=default_gt_date,
-            format="DD.MM.YYYY",
-            key=f"inp_gorusme_tarihi_{form_scope}",
-        )
-    with s_col4:
-        donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - 1. Çeyrek", "2026 - 2. Çeyrek", "2026 - 3. Çeyrek", "2026 - 4. Çeyrek"]
-        sec_donem = st.selectbox(
-            "Görüşme Dönemi",
-            donem_opts,
-            index=_pick_idx(donem_opts, str(prefill.get("donem", "2026 - 2. Dönem")), 1),
-            key=f"inp_donem_{form_scope}",
-        )
+        def _pick_idx(opts: list[str], val: str, fallback: int = 0) -> int:
+            if val and val in opts:
+                return opts.index(val)
+            return fallback
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        sec_gmy = st.selectbox(
-            "Genel Müdür Yardımcılığı",
-            gmy_options,
-            index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
-            key=f"inp_gmy_{form_scope}",
-        )
-    with c2:
-        sec_departman = st.selectbox(
-            "Departman",
-            DEPARTMAN_OPTIONS,
-            index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
-            key=f"inp_departman_{form_scope}",
-        )
-    with c3:
-        birim_options = assigned_gmy_map.get(sec_gmy, GMY_BIRIM_MAP.get(sec_gmy, []))
-        sec_birim = st.selectbox(
-            "Birim",
-            birim_options,
-            index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
-            key=f"inp_birim_{form_scope}",
-        )
-    with c4:
-        sec_bolum = st.selectbox(
-            "Bölüm",
-            BOLUM_OPTIONS,
-            index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
-            key=f"inp_bolum_{form_scope}",
-        )
+        prefill = dict(edit_record_row) if edit_record_row else (dict(emp_info) if emp_info else {})
+        if sicil_input:
+            prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
+        form_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'empty'}"
 
-    c5, c6, c7, c8 = st.columns(4)
-    with c5:
-        yon_val_init = str(prefill.get("yonetici_bilgisi", "") or "")
-        yon_extra = [yon_val_init] if (yon_val_init and yon_val_init not in YONETICI_OPTIONS) else []
-        yon_opts = YONETICI_OPTIONS + yon_extra
-        sec_yonetici = st.selectbox(
-            "Yönetici Bilgisi",
-            yon_opts,
-            index=_pick_idx(yon_opts, yon_val_init, 0),
-            key=f"inp_yonetici_{form_scope}",
-        )
-    with c6:
-        ise_giris_str = st.text_input(
-            "İşe Giriş Tarihi",
-            value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
-            placeholder="GG.AA.YYYY",
-            key=f"inp_ise_giris_{form_scope}",
-        )
-    with c7:
-        sec_ik_ortagi = st.selectbox(
-            "İK İş Ortağı",
-            IK_IS_ORTAGI_OPTIONS,
-            index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
-            key=f"inp_ik_ortagi_{form_scope}",
-        )
-    with c8:
-        loc_val_clean = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
-        sec_lokasyon = st.selectbox(
-            "Lokasyon",
-            LOKASYON_OPTIONS,
-            index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
-            key=f"inp_lokasyon_{form_scope}",
-        )
-
-    st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-    pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if sicil_input else None
-    d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
-    with d_col1:
-        duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
-        duygu_durumu = st.selectbox(
-            "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
-            duygu_opts,
-            index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
-            key=f"inp_duygu_{form_scope}",
-        )
-    with d_col2:
-        has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
-        default_aks_choice = "Evet" if (pdf_aks_detay is not None or str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
-        aksiyon_opts = ["Hayır", "Evet"]
-        aksiyon_ihtiyaci = st.selectbox(
-            "Aksiyon planı gerekli mi?",
-            aksiyon_opts,
-            index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
-            key=f"inp_aksiyon_ihtiyac_{form_scope}",
-        )
-    with d_col3:
-        model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
-        calisma_modeli = st.selectbox(
-            "Çalışma Modeli",
-            model_opts,
-            index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
-            key=f"inp_calisma_modeli_{form_scope}",
-        )
-
-    st.markdown("##### 📝 Aksiyon Planı / Detay")
-    default_aks_note = str(prefill.get("aksiyon_notu", "") or "").strip() or (pdf_aks_detay or "")
-    aksiyon_notu = st.text_area(
-        "Aksiyon Planı / Detay",
-        value=default_aks_note,
-        height=82,
-        placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
-        key=f"inp_aksiyon_plani_{form_scope}",
-    )
-
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "💬 15 Görüşme Sorusu",
-        "🏢 İnsan Kaynakları & Kapanış",
-        "⭐ 1-5 Puanlama (Bar + Manuel Giriş)",
-        "📥 Excel'den Veri İçe Aktar",
-    ])
-
-    q_answers = {}
-    ik_answers = {}
-    p_scores = {}
-
-    with tab1:
-        for q_key, q_text in GORUSME_SORULARI:
-            q_answers[q_key] = st.text_area(
-                q_text,
-                value=str(prefill.get(q_key, "") or ""),
-                height=70,
-                key=f"inp_{q_key}_{edit_kayit_id or 'new'}",
+        with s_col2:
+            ad_soyad_input = st.text_input(
+                "Ad Soyad",
+                value=str(prefill.get("ad_soyad", "")),
+                placeholder="Ad Soyad",
+                key=f"inp_ad_soyad_{form_scope}",
+            )
+        with s_col3:
+            default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=now_local().date())
+            gorusme_tarihi_dt = st.date_input(
+                "Görüşme Tarihi",
+                value=default_gt_date,
+                format="DD.MM.YYYY",
+                key=f"inp_gorusme_tarihi_{form_scope}",
+            )
+        with s_col4:
+            donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - 1. Çeyrek", "2026 - 2. Çeyrek", "2026 - 3. Çeyrek", "2026 - 4. Çeyrek"]
+            sec_donem = st.selectbox(
+                "Görüşme Dönemi",
+                donem_opts,
+                index=_pick_idx(donem_opts, str(prefill.get("donem", "2026 - 2. Dönem")), 1),
+                key=f"inp_donem_{form_scope}",
             )
 
-    with tab2:
-        for ik_key, ik_label in IK_BASLIKLARI:
-            ik_answers[ik_key] = st.text_area(
-                f"İK Başlığı — {ik_label}",
-                value=str(prefill.get(ik_key, "") or ""),
-                height=70,
-                key=f"inp_{ik_key}_{edit_kayit_id or 'new'}",
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            sec_gmy = st.selectbox(
+                "Genel Müdür Yardımcılığı",
+                gmy_options,
+                index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
+                key=f"inp_gmy_{form_scope}",
             )
-        q_kapanis = st.text_area(
-            "Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?",
-            value=str(prefill.get("q_kapanis", "") or ""),
-            height=80,
-            key=f"inp_q_kapanis_{edit_kayit_id or 'new'}",
-        )
-
-    with tab3:
-        st.caption(
-            "Puanı aşağıdaki bardan seçebilir veya sağdaki alana manuel (1.0 - 5.0 arası, 0.5 adımlı) girebilirsiniz; "
-            "manuel puan girildiğinde bar otomatik olarak güncellenir."
-        )
-        score_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'default'}"
-        for p_key, p_label in PUAN_BASLIKLARI:
-            default_p = _snap_half_step(prefill.get(p_key, None))
-            p_scores[p_key] = render_synced_score_row(p_key, p_label, default_p, score_scope)
-
-    with tab4:
-        st.markdown("Excel'de tutulan mevcut görüşme kayıtlarını tek seferde havuza aktarabilirsiniz.")
-        tmpl_bytes = build_excel_template()
-        st.download_button(
-            label="📄 Örnek Excel İçe Aktarma Şablonunu İndir (.xlsx)",
-            data=tmpl_bytes,
-            file_name="Izlenim_Paylasim_Import_Sablonu.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        uploaded_xlsx = st.file_uploader("Doldurulmuş Excel Dosyasını Seçin (.xlsx)", type=["xlsx"])
-        if uploaded_xlsx is not None:
-            if st.button("Excel Verilerini Havuza Aktar", type="primary"):
-                cnt_imp, msg_imp = import_excel_records(uploaded_xlsx)
-                if cnt_imp > 0:
-                    st.success(msg_imp)
-                    st.rerun()
-                else:
-                    st.error(msg_imp)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
-    if st.button(btn_label, type="primary", use_container_width=True):
-        clean_sicil = sicil_input.strip()
-        clean_ad_girilen = ad_soyad_input.strip()
-        clean_note = aksiyon_notu.strip()
-        has_note = _has_meaningful_action_note(clean_note)
-        clean_kapanis = q_kapanis.strip()
-        clean_q_vals = [v.strip() for v in q_answers.values() if v and v.strip()]
-        clean_ik_vals = [v.strip() for v in ik_answers.values() if v and v.strip()]
-        has_any_score = any(v is not None for v in p_scores.values())
-        has_any_content = bool(
-            clean_sicil
-            or clean_ad_girilen
-            or has_note
-            or clean_kapanis
-            or clean_q_vals
-            or clean_ik_vals
-            or has_any_score
-        )
-
-        if not edit_kayit_id and not has_any_content:
-            st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
-        else:
-            now_tr = now_local()
-            final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
-            final_ad = clean_ad_girilen or (emp_info["ad_soyad"] if emp_info else "Anonim")
-            g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
-            kayit_zamani_formatted = (
-                str(edit_record_row.get("kayit_zamani", "") or "").strip()
-                if edit_kayit_id and edit_record_row
-                else now_tr.strftime("%d.%m.%Y %H:%M")
+        with c2:
+            sec_departman = st.selectbox(
+                "Departman",
+                DEPARTMAN_OPTIONS,
+                index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
+                key=f"inp_departman_{form_scope}",
             )
-            ise_giris_formatted = _format_tr_date_input(ise_giris_str)
-            final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+        with c3:
+            birim_options = assigned_gmy_map.get(sec_gmy, GMY_BIRIM_MAP.get(sec_gmy, []))
+            sec_birim = st.selectbox(
+                "Birim",
+                birim_options,
+                index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
+                key=f"inp_birim_{form_scope}",
+            )
+        with c4:
+            sec_bolum = st.selectbox(
+                "Bölüm",
+                BOLUM_OPTIONS,
+                index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
+                key=f"inp_bolum_{form_scope}",
+            )
 
-            existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
-            existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
-            existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
-            keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            yon_val_init = str(prefill.get("yonetici_bilgisi", "") or "")
+            yon_extra = [yon_val_init] if (yon_val_init and yon_val_init not in YONETICI_OPTIONS) else []
+            yon_opts = YONETICI_OPTIONS + yon_extra
+            sec_yonetici = st.selectbox(
+                "Yönetici Bilgisi",
+                yon_opts,
+                index=_pick_idx(yon_opts, yon_val_init, 0),
+                key=f"inp_yonetici_{form_scope}",
+            )
+        with c6:
+            ise_giris_str = st.text_input(
+                "İşe Giriş Tarihi",
+                value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
+                placeholder="GG.AA.YYYY",
+                key=f"inp_ise_giris_{form_scope}",
+            )
+        with c7:
+            sec_ik_ortagi = st.selectbox(
+                "İK İş Ortağı",
+                IK_IS_ORTAGI_OPTIONS,
+                index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
+                key=f"inp_ik_ortagi_{form_scope}",
+            )
+        with c8:
+            loc_val_clean = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
+            sec_lokasyon = st.selectbox(
+                "Lokasyon",
+                LOKASYON_OPTIONS,
+                index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
+                key=f"inp_lokasyon_{form_scope}",
+            )
 
-            new_record = {
-                "kayit_id": final_kayit_id,
-                "sicil_no": clean_sicil or final_kayit_id,
-                "ad_soyad": final_ad,
-                "gorusme_tarihi": g_tarih_formatted,
-                "kayit_zamani": kayit_zamani_formatted,
-                "donem": sec_donem,
-                "hrbp_kullanici": user["username"],
-                "ik_is_ortagi": sec_ik_ortagi,
-                "gmy": sec_gmy,
-                "departman": sec_departman,
-                "birim": sec_birim,
-                "bolum": sec_bolum,
-                "yonetici_bilgisi": sec_yonetici,
-                "lokasyon": sec_lokasyon,
-                "ise_giris_tarihi": ise_giris_formatted,
-                "katilimci_turu": "Katılımcı",
-                "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
-                "calisma_modeli": calisma_modeli,
-                "duygu_durumu": duygu_durumu,
-                "ana_tema": "Güven ve Kültür",
-                "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
-                "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
-                "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
-                "aksiyon_tamamlandi": keep_done,
-                "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
-                "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
-                "q_kapanis": clean_kapanis,
-                **{k: v.strip() for k, v in q_answers.items()},
-                **{k: v.strip() for k, v in ik_answers.items()},
-                **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
-            }
-            ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
-            if ok:
-                st.success(msg)
+        st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
+        pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if sicil_input else None
+        d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
+        with d_col1:
+            duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
+            duygu_durumu = st.selectbox(
+                "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
+                duygu_opts,
+                index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
+                key=f"inp_duygu_{form_scope}",
+            )
+        with d_col2:
+            has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
+            default_aks_choice = "Evet" if (pdf_aks_detay is not None or str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
+            aksiyon_opts = ["Hayır", "Evet"]
+            aksiyon_ihtiyaci = st.selectbox(
+                "Aksiyon planı gerekli mi?",
+                aksiyon_opts,
+                index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
+                key=f"inp_aksiyon_ihtiyac_{form_scope}",
+            )
+        with d_col3:
+            model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
+            calisma_modeli = st.selectbox(
+                "Çalışma Modeli",
+                model_opts,
+                index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
+                key=f"inp_calisma_modeli_{form_scope}",
+            )
+
+        st.markdown("##### 📝 Aksiyon Planı / Detay")
+        default_aks_note = str(prefill.get("aksiyon_notu", "") or "").strip() or (pdf_aks_detay or "")
+        aksiyon_notu = st.text_area(
+            "Aksiyon Planı / Detay",
+            value=default_aks_note,
+            height=82,
+            placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
+            key=f"inp_aksiyon_plani_{form_scope}",
+        )
+
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "💬 15 Görüşme Sorusu",
+            "🏢 İnsan Kaynakları & Kapanış",
+            "⭐ 1-5 Puanlama (Bar + Manuel Giriş)",
+            "📥 Excel'den Veri İçe Aktar",
+        ])
+
+        q_answers = {}
+        ik_answers = {}
+        p_scores = {}
+
+        with tab1:
+            for q_key, q_text in GORUSME_SORULARI:
+                q_answers[q_key] = st.text_area(
+                    q_text,
+                    value=str(prefill.get(q_key, "") or ""),
+                    height=70,
+                    key=f"inp_{q_key}_{edit_kayit_id or 'new'}",
+                )
+
+        with tab2:
+            for ik_key, ik_label in IK_BASLIKLARI:
+                ik_answers[ik_key] = st.text_area(
+                    f"İK Başlığı — {ik_label}",
+                    value=str(prefill.get(ik_key, "") or ""),
+                    height=70,
+                    key=f"inp_{ik_key}_{edit_kayit_id or 'new'}",
+                )
+            q_kapanis = st.text_area(
+                "Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?",
+                value=str(prefill.get("q_kapanis", "") or ""),
+                height=80,
+                key=f"inp_q_kapanis_{edit_kayit_id or 'new'}",
+            )
+
+        with tab3:
+            st.caption(
+                "Puanı aşağıdaki bardan seçebilir veya sağdaki alana manuel (1.0 - 5.0 arası, 0.5 adımlı) girebilirsiniz; "
+                "manuel puan girildiğinde bar otomatik olarak güncellenir."
+            )
+            score_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'default'}"
+            for p_key, p_label in PUAN_BASLIKLARI:
+                default_p = _snap_half_step(prefill.get(p_key, None))
+                p_scores[p_key] = render_synced_score_row(p_key, p_label, default_p, score_scope)
+
+        with tab4:
+            st.markdown("Excel'de tutulan mevcut görüşme kayıtlarını tek seferde havuza aktarabilirsiniz.")
+            tmpl_bytes = build_excel_template()
+            st.download_button(
+                label="📄 Örnek Excel İçe Aktarma Şablonunu İndir (.xlsx)",
+                data=tmpl_bytes,
+                file_name="Izlenim_Paylasim_Import_Sablonu.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            uploaded_xlsx = st.file_uploader("Doldurulmuş Excel Dosyasını Seçin (.xlsx)", type=["xlsx"])
+            if uploaded_xlsx is not None:
+                if st.button("Excel Verilerini Havuza Aktar", type="primary"):
+                    cnt_imp, msg_imp = import_excel_records(uploaded_xlsx)
+                    if cnt_imp > 0:
+                        st.success(msg_imp)
+                        st.rerun()
+                    else:
+                        st.error(msg_imp)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
+        if st.button(btn_label, type="primary", use_container_width=True):
+            clean_sicil = sicil_input.strip()
+            clean_ad_girilen = ad_soyad_input.strip()
+            clean_note = aksiyon_notu.strip()
+            has_note = _has_meaningful_action_note(clean_note)
+            clean_kapanis = q_kapanis.strip()
+            clean_q_vals = [v.strip() for v in q_answers.values() if v and v.strip()]
+            clean_ik_vals = [v.strip() for v in ik_answers.values() if v and v.strip()]
+            has_any_score = any(v is not None for v in p_scores.values())
+            has_any_content = bool(
+                clean_sicil
+                or clean_ad_girilen
+                or has_note
+                or clean_kapanis
+                or clean_q_vals
+                or clean_ik_vals
+                or has_any_score
+            )
+
+            if clean_sicil and clean_sicil in existing_sicil_set:
+                st.error(f"**{clean_sicil}** sicili zaten mevcut; farklı bir sicil girmeden kaydedilemez.")
+            elif not edit_kayit_id and not has_any_content:
+                st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
             else:
-                st.error(msg)
+                now_tr = now_local()
+                final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
+                final_ad = clean_ad_girilen or (emp_info["ad_soyad"] if emp_info else "Anonim")
+                g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
+                kayit_zamani_formatted = (
+                    str(edit_record_row.get("kayit_zamani", "") or "").strip()
+                    if edit_kayit_id and edit_record_row
+                    else now_tr.strftime("%d.%m.%Y %H:%M")
+                )
+                ise_giris_formatted = _format_tr_date_input(ise_giris_str)
+                final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+
+                existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
+                existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
+                existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
+                keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
+
+                new_record = {
+                    "kayit_id": final_kayit_id,
+                    "sicil_no": clean_sicil or final_kayit_id,
+                    "ad_soyad": final_ad,
+                    "gorusme_tarihi": g_tarih_formatted,
+                    "kayit_zamani": kayit_zamani_formatted,
+                    "donem": sec_donem,
+                    "hrbp_kullanici": user["username"],
+                    "ik_is_ortagi": sec_ik_ortagi,
+                    "gmy": sec_gmy,
+                    "departman": sec_departman,
+                    "birim": sec_birim,
+                    "bolum": sec_bolum,
+                    "yonetici_bilgisi": sec_yonetici,
+                    "lokasyon": sec_lokasyon,
+                    "ise_giris_tarihi": ise_giris_formatted,
+                    "katilimci_turu": "Katılımcı",
+                    "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
+                    "calisma_modeli": calisma_modeli,
+                    "duygu_durumu": duygu_durumu,
+                    "ana_tema": "Güven ve Kültür",
+                    "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
+                    "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
+                    "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
+                    "aksiyon_tamamlandi": keep_done,
+                    "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
+                    "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
+                    "q_kapanis": clean_kapanis,
+                    **{k: v.strip() for k, v in q_answers.items()},
+                    **{k: v.strip() for k, v in ik_answers.items()},
+                    **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
+                }
+                ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
 
 elif is_presentation_mod:
     allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
