@@ -2122,7 +2122,7 @@ assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
 # Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (orantılı sütunlar)
-hdr_left, hdr_right = st.columns([2.2, 1.8], vertical_alignment="stretch")
+hdr_left, hdr_right = st.columns([2.2, 1.8], vertical_alignment="top")
 with hdr_left:
     st.markdown(
         f"""
