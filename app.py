@@ -2556,37 +2556,44 @@ if sayfa == "1-1 Görüşme Kayıt":
             )
 
         st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-        pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
-        d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
-        with d_col1:
-            duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
-            duygu_durumu = st.selectbox(
-                "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
-                duygu_opts,
-                index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
-                disabled=is_duplicate_sicil_donem,
-                key="inp_duygu",
-            )
-        with d_col2:
-            has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
-            default_aks_choice = "Evet" if (pdf_aks_detay is not None or str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
-            aksiyon_opts = ["Hayır", "Evet"]
-            aksiyon_ihtiyaci = st.selectbox(
-                "Aksiyon planı gerekli mi?",
-                aksiyon_opts,
-                index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
-                disabled=is_duplicate_sicil_donem,
-                key="inp_aksiyon_ihtiyac",
-            )
-        with d_col3:
-            model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
-            calisma_modeli = st.selectbox(
-                "Çalışma Modeli",
-                model_opts,
-                index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
-                disabled=is_duplicate_sicil_donem,
-                key="inp_calisma_modeli",
-            )
+    pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
+    is_edit_mode = edit_record_row is not None
+    d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
+    with d_col1:
+        duygu_opts = ["", "Olumlu", "Nötr", "Olumsuz"]
+        init_duygu = str(prefill.get("duygu_durumu", "") or "").strip() if is_edit_mode else ""
+        duygu_durumu = st.selectbox(
+            "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
+            duygu_opts,
+            index=_pick_idx(duygu_opts, init_duygu, 0),
+            disabled=is_duplicate_sicil_donem,
+            key="inp_duygu",
+        )
+    with d_col2:
+        has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
+        if is_edit_mode:
+            raw_aks = str(prefill.get("aksiyon_ihtiyaci", "") or "").strip()
+            init_aks = raw_aks if raw_aks in ("Evet", "Hayır") else ("Evet" if has_existing_note else "")
+        else:
+            init_aks = ""
+        aksiyon_opts = ["", "Hayır", "Evet"]
+        aksiyon_ihtiyaci = st.selectbox(
+            "Aksiyon planı gerekli mi?",
+            aksiyon_opts,
+            index=_pick_idx(aksiyon_opts, init_aks, 0),
+            disabled=is_duplicate_sicil_donem,
+            key="inp_aksiyon_ihtiyac",
+        )
+    with d_col3:
+        model_opts = ["", "Hibrit", "Uzaktan", "Ofis / Saha"]
+        init_model = str(prefill.get("calisma_modeli", "") or "").strip() if is_edit_mode else ""
+        calisma_modeli = st.selectbox(
+            "Çalışma Modeli",
+            model_opts,
+            index=_pick_idx(model_opts, init_model, 0),
+            disabled=is_duplicate_sicil_donem,
+            key="inp_calisma_modeli",
+        )
 
         st.markdown("##### 📝 Aksiyon Planı / Detay")
         default_aks_note = str(prefill.get("aksiyon_notu", "") or "").strip() or (pdf_aks_detay or "")
@@ -2688,9 +2695,11 @@ if sayfa == "1-1 Görüşme Kayıt":
             )
 
             if clean_sicil and (clean_sicil, clean_donem) in existing_sicil_donem_set:
-                st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
-            elif not edit_kayit_id and not has_any_content:
-                st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
+            st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
+        elif not duygu_durumu or not aksiyon_ihtiyaci or not calisma_modeli:
+            st.error("Lütfen **Duygu Durumu**, **Aksiyon planı gerekli mi?** ve **Çalışma Modeli** alanlarının tamamını seçin.")
+        elif not edit_kayit_id and not has_any_content:
+            st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
             else:
                 now_tr = now_local()
                 final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
