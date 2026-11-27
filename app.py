@@ -5,6 +5,7 @@ import json
 import os
 import re
 import zlib
+from zoneinfo import ZoneInfo
 import numpy as np
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
@@ -16,6 +17,13 @@ from pptx.util import Inches, Pt
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import streamlit as st
+
+LOCAL_TZ = ZoneInfo("Europe/Istanbul")
+
+
+def now_local() -> datetime:
+    return datetime.now(LOCAL_TZ)
+
 
 st.set_page_config(
     page_title="İzlenim Paylaşım Paneli",
@@ -785,7 +793,7 @@ HALF_STEP_SCORE_OPTIONS = ["Boş", 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 
 def _parse_date_safe(val: object, fallback: date | None = None) -> date:
-    default_d = fallback if fallback is not None else date.today()
+    default_d = fallback if fallback is not None else now_local().date()
     if isinstance(val, datetime):
         return val.date()
     if isinstance(val, date):
@@ -1518,6 +1526,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
         ik_ortak_val = _clean(r.get("ik_is_ortagi") or r.get("İK İş Ortağı")) or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]
         ad_soyad_val = _clean(r.get("ad_soyad") or r.get("Ad Soyad")) or f"Kayıt {idx + 1}"
         g_tarih = _clean(r.get("gorusme_tarihi") or r.get("Görüşme Tarihi") or r.get("Görüşme Tarihi (Ay/Gün/Yıl)")) or "2026-06-04"
+        kayit_zamani_val = _clean(r.get("kayit_zamani") or r.get("Kayıt Zamanı")) or f"{g_tarih} 10:00"
 
         mem = _score(r.get("p_genel_memnuniyet") if "p_genel_memnuniyet" in r else r.get("st Memnuniyeti"))
         duygu_raw = _clean(r.get("duygu_durumu") or r.get("Duygu Durumu"))
@@ -1588,7 +1597,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 "sicil_no": sicil_val,
                 "ad_soyad": ad_soyad_val,
                 "gorusme_tarihi": g_tarih,
-                "kayit_zamani": f"{g_tarih} 10:00",
+                "kayit_zamani": kayit_zamani_val,
                 "donem": _clean(r.get("donem") or r.get("Dönem")) or "2026 - 2. Dönem",
                 "hrbp_kullanici": _clean(r.get("hrbp_kullanici")) or "seyma",
                 "ik_is_ortagi": ik_ortak_val,
@@ -1786,7 +1795,7 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
                 all_vals = ws.get_all_values()
                 id_col_idx = headers.index("kayit_id")
                 for r_idx, row_vals in enumerate(all_vals[1:], start=2):
-                    if len(row_vals) > id_col_idx and row_vals[id_col_idx] == edit_kayit_id:
+                    if len(r_vals) > id_col_idx and row_vals[id_col_idx] == edit_kayit_id:
                         updated_row = [record.get(h, "") for h in headers]
                         ws.update(f"A{r_idx}", [updated_row])
                         return True, f"Kayıt ({edit_kayit_id}) Google Sheets üzerinde güncellendi."
@@ -1837,7 +1846,7 @@ def build_excel_template() -> bytes:
     sample_row = {
         "Sicil": "1001",
         "Ad Soyad": "Çalışan 1",
-        "Görüşme Tarihi": date.today().strftime("%d.%m.%Y"),
+        "Görüşme Tarihi": now_local().date().strftime("%d.%m.%Y"),
         "Dönem": "2026 - 2. Dönem",
         "Genel Müdür Yardımcılığı": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
         "Departman": "Yazılım Geliştirme Departmanı",
@@ -2414,7 +2423,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             key=f"inp_ad_soyad_{form_scope}",
         )
     with s_col3:
-        default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=date.today())
+        default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=now_local().date())
         gorusme_tarihi_dt = st.date_input(
             "Görüşme Tarihi",
             value=default_gt_date,
@@ -2602,56 +2611,81 @@ if sayfa == "1-1 Görüşme Kayıt":
     st.markdown("<br>", unsafe_allow_html=True)
     btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
     if st.button(btn_label, type="primary", use_container_width=True):
-        final_kayit_id = edit_kayit_id if edit_kayit_id else datetime.now().strftime("%Y%m%d-%H%M%S")
-        final_ad = ad_soyad_input.strip() or (emp_info["ad_soyad"] if emp_info else "Anonim")
-        g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
-        ise_giris_formatted = _format_tr_date_input(ise_giris_str)
+        clean_sicil = sicil_input.strip()
+        clean_ad_girilen = ad_soyad_input.strip()
         clean_note = aksiyon_notu.strip()
         has_note = _has_meaningful_action_note(clean_note)
-        final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+        clean_kapanis = q_kapanis.strip()
+        clean_q_vals = [v.strip() for v in q_answers.values() if v and v.strip()]
+        clean_ik_vals = [v.strip() for v in ik_answers.values() if v and v.strip()]
+        has_any_score = any(v is not None for v in p_scores.values())
+        has_any_content = bool(
+            clean_sicil
+            or clean_ad_girilen
+            or has_note
+            or clean_kapanis
+            or clean_q_vals
+            or clean_ik_vals
+            or has_any_score
+        )
 
-        existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
-        existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
-        existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
-        keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
-
-        new_record = {
-            "kayit_id": final_kayit_id,
-            "sicil_no": sicil_input or final_kayit_id,
-            "ad_soyad": final_ad,
-            "gorusme_tarihi": g_tarih_formatted,
-            "kayit_zamani": f"{g_tarih_formatted} {datetime.now().strftime('%H:%M')}",
-            "donem": sec_donem,
-            "hrbp_kullanici": user["username"],
-            "ik_is_ortagi": sec_ik_ortagi,
-            "gmy": sec_gmy,
-            "departman": sec_departman,
-            "birim": sec_birim,
-            "bolum": sec_bolum,
-            "yonetici_bilgisi": sec_yonetici,
-            "lokasyon": sec_lokasyon,
-            "ise_giris_tarihi": ise_giris_formatted,
-            "katilimci_turu": "Katılımcı",
-            "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
-            "calisma_modeli": calisma_modeli,
-            "duygu_durumu": duygu_durumu,
-            "ana_tema": "Güven ve Kültür",
-            "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
-            "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
-            "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
-            "aksiyon_tamamlandi": keep_done,
-            "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
-            "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
-            "q_kapanis": q_kapanis.strip(),
-            **{k: v.strip() for k, v in q_answers.items()},
-            **{k: v.strip() for k, v in ik_answers.items()},
-            **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
-        }
-        ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
-        if ok:
-            st.success(msg)
+        if not edit_kayit_id and not has_any_content:
+            st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
         else:
-            st.error(msg)
+            now_tr = now_local()
+            final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
+            final_ad = clean_ad_girilen or (emp_info["ad_soyad"] if emp_info else "Anonim")
+            g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
+            kayit_zamani_formatted = (
+                str(edit_record_row.get("kayit_zamani", "") or "").strip()
+                if edit_kayit_id and edit_record_row
+                else now_tr.strftime("%d.%m.%Y %H:%M")
+            )
+            ise_giris_formatted = _format_tr_date_input(ise_giris_str)
+            final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+
+            existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
+            existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
+            existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
+            keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
+
+            new_record = {
+                "kayit_id": final_kayit_id,
+                "sicil_no": clean_sicil or final_kayit_id,
+                "ad_soyad": final_ad,
+                "gorusme_tarihi": g_tarih_formatted,
+                "kayit_zamani": kayit_zamani_formatted,
+                "donem": sec_donem,
+                "hrbp_kullanici": user["username"],
+                "ik_is_ortagi": sec_ik_ortagi,
+                "gmy": sec_gmy,
+                "departman": sec_departman,
+                "birim": sec_birim,
+                "bolum": sec_bolum,
+                "yonetici_bilgisi": sec_yonetici,
+                "lokasyon": sec_lokasyon,
+                "ise_giris_tarihi": ise_giris_formatted,
+                "katilimci_turu": "Katılımcı",
+                "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
+                "calisma_modeli": calisma_modeli,
+                "duygu_durumu": duygu_durumu,
+                "ana_tema": "Güven ve Kültür",
+                "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
+                "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
+                "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
+                "aksiyon_tamamlandi": keep_done,
+                "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
+                "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
+                "q_kapanis": clean_kapanis,
+                **{k: v.strip() for k, v in q_answers.items()},
+                **{k: v.strip() for k, v in ik_answers.items()},
+                **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
+            }
+            ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
 
 elif is_presentation_mod:
     allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
@@ -2729,7 +2763,7 @@ elif is_presentation_mod:
                 gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
                 kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
                 done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
-                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or date.today().strftime("%d.%m.%Y")
+                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or now_local().date().strftime("%d.%m.%Y")
                 is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
                 aksiyon_not_kayitlari.append(
                     {
@@ -2906,7 +2940,7 @@ elif is_presentation_mod:
                     if chk_key not in st.session_state:
                         st.session_state[chk_key] = False
                     if dt_key not in st.session_state:
-                        st.session_state[dt_key] = date.today()
+                        st.session_state[dt_key] = now_local().date()
                     if nt_key not in st.session_state:
                         st.session_state[nt_key] = ""
 
@@ -2938,7 +2972,7 @@ elif is_presentation_mod:
                             with f_btn_col:
                                 if st.button("Aksiyonu Kapat", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
                                     note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
-                                    dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=date.today()).strftime("%d.%m.%Y")
+                                    dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=now_local().date()).strftime("%d.%m.%Y")
                                     if not _has_completion_note(note_input_val):
                                         st.session_state[chk_key] = False
                                         st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon kapatılamaz!"
@@ -2966,7 +3000,7 @@ elif is_presentation_mod:
                     meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
                     meta_str = " • ".join(meta_parcalar)
                     uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
-                    kapatilma_tarihi = item_aks["tamamlanma_tarihi"] or date.today().strftime("%d.%m.%Y")
+                    kapatilma_tarihi = item_aks["tamamlanma_tarihi"] or now_local().date().strftime("%d.%m.%Y")
                     kapatma_yorumu = item_aks["tamamlanma_notu"] or "-"
 
                     c_card, c_reopen = st.columns([4.5, 1.2], vertical_alignment="center")
@@ -3363,7 +3397,7 @@ else:
         st.download_button(
             label="📥 Havuzu Excel Olarak İndir (.xlsx)",
             data=excel_data,
-            file_name=f"Izlenim_Paylasim_Havuz_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name=f"Izlenim_Paylasim_Havuz_{now_local().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
