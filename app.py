@@ -1408,12 +1408,12 @@ def cluster_similar_statements(
 
 def _df_fingerprint(df: pd.DataFrame) -> str:
     if df is None or df.empty:
-        return "empty_v3"
+        return "empty_v4"
     try:
         payload = pd.util.hash_pandas_object(df, index=True).values.tobytes()
-        return f"{zlib.crc32(payload)}_v3"
+        return f"{zlib.crc32(payload)}_v4"
     except Exception:
-        return f"{len(df)}_{list(df.columns)}_v3"
+        return f"{len(df)}_{list(df.columns)}_v4"
 
 
 def _df_to_json_safe(df: pd.DataFrame) -> str:
@@ -1631,14 +1631,14 @@ def _cached_hybrid_percentages(df_key: str, records_json: str) -> list[tuple[str
             continue
         total_ans += 1
         low = tr_lower(txt)
-        if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış"]):
-            buckets["Tam Uzaktan / Evden"] += 1
+        if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış", "remote"]):
+            buckets["Remote"] += 1
         elif any(k in low for k in ["ofis", "tam zamanlı ofis", "her gün ofis"]):
-            buckets["Ofis Ağırlıklı / Tam Ofis"] += 1
+            buckets["Ofis"] += 1
         elif any(k in low for k in ["hibrit", "esnek", "gün", "haftada", "uzaktan", "denge"]):
-            buckets["Hibrit / Esnek Model"] += 1
+            buckets["Hibrit"] += 1
         else:
-            buckets["Diğer / Koşullu Görüş"] += 1
+            buckets["Remote"] += 1
     if total_ans == 0:
         return []
     return [(b_name, b_cnt, round((b_cnt / total_ans) * 100, 1)) for b_name, b_cnt in buckets.most_common()]
@@ -2995,9 +2995,47 @@ def render_izlenim_paylasim_module(
         st.markdown("#### 3. Hibrit Ritmi — İlerisi İçin Tercih Edilen Çalışma Modeli (%)")
         if hybrid_dist:
             df_hyb = pd.DataFrame(hybrid_dist, columns=["Çalışma Modeli Tercihi", "Kişi Sayısı", "Oran (%)"])
-            st.dataframe(df_hyb, use_container_width=True, hide_index=True)
-            for m_ad, m_cnt, m_pct in hybrid_dist:
-                st.markdown(f"- **{m_ad}:** **%{m_pct:.1f}** ({m_cnt} yanıt)")
+            chart_col, info_col = st.columns([1.25, 1.0], vertical_alignment="center")
+            palette_map = {
+                "Hibrit": "#22D3EE",
+                "Remote": "#A855F7",
+                "Ofis": "#10B981",
+            }
+            with chart_col:
+                fig_hyb = px.pie(
+                    df_hyb,
+                    names="Çalışma Modeli Tercihi",
+                    values="Kişi Sayısı",
+                    hole=0.42,
+                    color="Çalışma Modeli Tercihi",
+                    color_discrete_map=palette_map,
+                )
+                fig_hyb.update_traces(
+                    textinfo="label+percent+value",
+                    textfont=dict(size=13, color="#FFFFFF"),
+                    marker=dict(line=dict(color=BG_DARK, width=2.5)),
+                    pull=[0.04 if i == 0 else 0.0 for i in range(len(df_hyb))],
+                )
+                fig_hyb.update_layout(
+                    paper_bgcolor=CARD_DARK,
+                    plot_bgcolor=CARD_DARK,
+                    font=dict(color=TEXT_LIGHT, size=12),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=-0.15,
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(color=TEXT_LIGHT),
+                    ),
+                    height=330,
+                    margin=dict(l=15, r=15, t=20, b=35),
+                )
+                st.plotly_chart(fig_hyb, use_container_width=True)
+            with info_col:
+                st.dataframe(df_hyb, use_container_width=True, hide_index=True)
+                for m_ad, m_cnt, m_pct in hybrid_dist:
+                    st.markdown(f"- **{m_ad}:** **%{m_pct:.1f}** ({m_cnt} yanıt)")
         else:
             st.info("Bu başlık için çalışma modeli yanıtı bulunamadı.")
     elif active_card == "card_4_ucret":
