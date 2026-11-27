@@ -942,8 +942,7 @@ def _snap_half_step(raw_val: object) -> float | None:
 
 def _norm_key(k: str) -> str:
     s = tr_lower(str(k or ""))
-    s = re.sub(r"[^a-zçğıöşü0-9]+", "", s)
-    return s
+    return re.sub(r"[^a-zçğıöşü0-9]+", "", s)
 
 
 def _extract_score_from_record(r: dict, p_key: str, p_label: str) -> float | None:
@@ -1185,7 +1184,9 @@ CANONICAL_TOPIC_LABELS = {
 }
 
 
-def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
+@st.cache_data(show_spinner=False)
+def _build_employee_directory_cached(records_json: str) -> dict[str, dict]:
+    df_all = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
     directory = {}
     all_gmy_birim = [(g, b) for g, bs in GMY_BIRIM_MAP.items() for b in bs]
 
@@ -1234,6 +1235,10 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
             directory[sic_k]["lokasyon"] = loc_v
 
     return directory
+
+
+def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
+    return _build_employee_directory_cached(_df_to_json_safe(df_all))
 
 
 def normalize_turkish_text(text: str) -> str:
@@ -1295,7 +1300,7 @@ def cluster_similar_statements(
     records: list[tuple[int, str]],
     top_n: int = 3,
     sim_threshold: float = 0.34,
-    max_items: int = 400,
+    max_items: int = 300,
 ) -> list[str]:
     if not records:
         return []
@@ -1456,8 +1461,14 @@ def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos
     return " ".join(paragraflar)
 
 
+@st.cache_data(show_spinner=False)
+def _analyze_department_cached(records_json: str, secili_gmy: str) -> dict:
+    df_scoped = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
+    return _analyze_department_impl(df_scoped, secili_gmy)
+
+
 def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
-    if secili_gmy != "Tümü" and "gmy" in df_scoped.columns:
+    if secili_gmy != "Tümü" and "gmy" in df_scoped.columns and not df_scoped.empty:
         df_dept = df_scoped[df_scoped["gmy"] == secili_gmy].copy()
         hedef_gmy_adlari = [secili_gmy]
     else:
@@ -1766,7 +1777,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 "aksiyon_notu": aksiyon_not_final,
                 "aksiyon_tamamlandi": aksiyon_tamamlandi,
                 "aksiyon_tamamlanma_tarihi": tamamlanma_tarih_val,
-                "aksiyon_tamamlanma_notu": tamamlanma_not_val if aksiyon_tamamlandi else tamamlanma_not_val,
+                "aksiyon_tamamlanma_notu": tamamlanma_not_val,
                 "q_kapanis": kapanis_txt,
                 **{
                     k: _clean(r.get(k) or r.get(lbl))
@@ -1822,7 +1833,8 @@ def _sync_action_plan_to_df(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def get_sample_data() -> pd.DataFrame:
+@st.cache_data(show_spinner=False)
+def _load_file_sample_cached() -> str:
     base_dir = os.path.dirname(globals().get("__file__", ""))
     for cand in [
         "records_126_compact.json",
@@ -1833,9 +1845,16 @@ def get_sample_data() -> pd.DataFrame:
             with open(cand, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
             if isinstance(loaded, list) and len(loaded) > 0:
-                return _sync_action_plan_to_df(_map_records_to_df(loaded))
+                df_m = _sync_action_plan_to_df(_map_records_to_df(loaded))
+                return df_m.to_json(orient="records", force_ascii=False)
+    return "[]"
 
-    return pd.DataFrame([])
+
+def get_sample_data() -> pd.DataFrame:
+    raw_json = _load_file_sample_cached()
+    if not raw_json or raw_json == "[]":
+        return pd.DataFrame([])
+    return _sync_action_plan_to_df(pd.read_json(io.StringIO(raw_json), orient="records"))
 
 
 def load_records() -> tuple[pd.DataFrame, str]:
@@ -2482,7 +2501,6 @@ with st.sidebar:
 
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
-is_presentation_mod = sayfa == "İzlenim Paylaşım Görüşmeleri"
 
 MODULE_HEADER_TITLES = {
     "1-1 Görüşme Kayıt": "1-1 Görüşme Kayıt",
@@ -2911,7 +2929,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 else:
                     st.error(msg)
 
-elif is_presentation_mod:
+elif sayfa == "İzlenim Paylaşım Görüşmeleri":
     allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
     df_scoped = df_all.copy()
 
@@ -3038,10 +3056,7 @@ elif is_presentation_mod:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    dept_cache_key = f"dept_{_df_fingerprint(df_view)}_{sel_gmy_f}"
-    if dept_cache_key not in st.session_state:
-        st.session_state[dept_cache_key] = _analyze_department_impl(df_view, sel_gmy_f)
-    dept_res = st.session_state[dept_cache_key]
+    dept_res = _analyze_department_cached(_df_to_json_safe(df_view), sel_gmy_f)
 
     exp_c1, exp_c2 = st.columns(2)
     with exp_c1:
