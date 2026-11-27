@@ -339,6 +339,167 @@ AKSIYON_PLANI_MAP = {
     "1124": "Anahtar role geçiş talebi bulunuyor, değerlendirilecek.",
 }
 
+# Lokasyon.pdf'ten alınan güncel ve tekil lokasyon seçenekleri
+LOKASYON_OPTIONS = [
+    "İSTANBUL TEKNOKENT",
+    "TUTOM - ARGE",
+    "ANKARA TEKNOKENT",
+    "TUTOM",
+    "İŞ KULE - 3",
+]
+
+# Lokasyon.pdf'ten alınan sicil -> lokasyon eşlemesi (1001 - 1126)
+LOKASYON_BY_SICIL = {
+    "1001": "ANKARA TEKNOKENT",
+    "1002": "İSTANBUL TEKNOKENT",
+    "1003": "ANKARA TEKNOKENT",
+    "1004": "İSTANBUL TEKNOKENT",
+    "1005": "ANKARA TEKNOKENT",
+    "1006": "İSTANBUL TEKNOKENT",
+    "1007": "ANKARA TEKNOKENT",
+    "1008": "ANKARA TEKNOKENT",
+    "1009": "ANKARA TEKNOKENT",
+    "1010": "ANKARA TEKNOKENT",
+    "1011": "İSTANBUL TEKNOKENT",
+    "1012": "TUTOM - ARGE",
+    "1013": "ANKARA TEKNOKENT",
+    "1014": "TUTOM",
+    "1015": "TUTOM - ARGE",
+    "1016": "İSTANBUL TEKNOKENT",
+    "1017": "TUTOM - ARGE",
+    "1018": "TUTOM - ARGE",
+    "1019": "İSTANBUL TEKNOKENT",
+    "1020": "İSTANBUL TEKNOKENT",
+    "1021": "İSTANBUL TEKNOKENT",
+    "1022": "İSTANBUL TEKNOKENT",
+    "1023": "TUTOM",
+    "1024": "TUTOM - ARGE",
+    "1025": "TUTOM - ARGE",
+    "1026": "TUTOM - ARGE",
+    "1027": "İSTANBUL TEKNOKENT",
+    "1028": "TUTOM",
+    "1029": "İSTANBUL TEKNOKENT",
+    "1030": "İSTANBUL TEKNOKENT",
+    "1031": "İSTANBUL TEKNOKENT",
+    "1032": "İSTANBUL TEKNOKENT",
+    "1033": "İSTANBUL TEKNOKENT",
+    "1034": "TUTOM - ARGE",
+    "1035": "İSTANBUL TEKNOKENT",
+    "1036": "İSTANBUL TEKNOKENT",
+    "1037": "İSTANBUL TEKNOKENT",
+    "1038": "TUTOM - ARGE",
+    "1039": "İSTANBUL TEKNOKENT",
+    "1040": "TUTOM",
+    "1041": "İSTANBUL TEKNOKENT",
+    "1042": "TUTOM - ARGE",
+    "1043": "TUTOM - ARGE",
+    "1044": "İSTANBUL TEKNOKENT",
+    "1045": "İSTANBUL TEKNOKENT",
+    "1046": "TUTOM - ARGE",
+    "1047": "ANKARA TEKNOKENT",
+    "1048": "TUTOM - ARGE",
+    "1049": "TUTOM - ARGE",
+    "1050": "TUTOM",
+    "1051": "TUTOM - ARGE",
+    "1052": "TUTOM - ARGE",
+    "1053": "TUTOM - ARGE",
+    "1054": "İSTANBUL TEKNOKENT",
+    "1055": "TUTOM - ARGE",
+    "1056": "TUTOM - ARGE",
+    "1057": "İSTANBUL TEKNOKENT",
+    "1058": "İSTANBUL TEKNOKENT",
+    "1059": "İSTANBUL TEKNOKENT",
+    "1060": "İSTANBUL TEKNOKENT",
+    "1061": "İSTANBUL TEKNOKENT",
+    "1062": "ANKARA TEKNOKENT",
+    "1063": "TUTOM - ARGE",
+    "1064": "TUTOM",
+    "1065": "ANKARA TEKNOKENT",
+    "1066": "İSTANBUL TEKNOKENT",
+    "1067": "İSTANBUL TEKNOKENT",
+    "1068": "İSTANBUL TEKNOKENT",
+    "1069": "İSTANBUL TEKNOKENT",
+    "1070": "İSTANBUL TEKNOKENT",
+    "1071": "ANKARA TEKNOKENT",
+    "1072": "TUTOM - ARGE",
+    "1073": "İSTANBUL TEKNOKENT",
+    "1074": "İSTANBUL TEKNOKENT",
+    "1075": "İSTANBUL TEKNOKENT",
+    "1076": "ANKARA TEKNOKENT",
+    "1077": "TUTOM - ARGE",
+    "1078": "TUTOM - ARGE",
+    "1079": "TUTOM - ARGE",
+    "1080": "ANKARA TEKNOKENT",
+    "1081": "İŞ KULE - 3",
+    "1082": "TUTOM - ARGE",
+    "1083": "TUTOM - ARGE",
+    "1084": "İSTANBUL TEKNOKENT",
+    "1085": "ANKARA TEKNOKENT",
+    "1086": "TUTOM - ARGE",
+    "1087": "TUTOM - ARGE",
+    "1088": "İSTANBUL TEKNOKENT",
+    "1089": "İSTANBUL TEKNOKENT",
+    "1090": "İSTANBUL TEKNOKENT",
+    "1091": "TUTOM - ARGE",
+    "1092": "İSTANBUL TEKNOKENT",
+    "1093": "TUTOM - ARGE",
+    "1094": "TUTOM - ARGE",
+    "1095": "İSTANBUL TEKNOKENT",
+    "1096": "İSTANBUL TEKNOKENT",
+    "1097": "İSTANBUL TEKNOKENT",
+    "1098": "TUTOM - ARGE",
+    "1099": "ANKARA TEKNOKENT",
+    "1100": "İSTANBUL TEKNOKENT",
+    "1101": "İSTANBUL TEKNOKENT",
+    "1102": "İSTANBUL TEKNOKENT",
+    "1103": "İSTANBUL TEKNOKENT",
+    "1104": "TUTOM - ARGE",
+    "1105": "TUTOM - ARGE",
+    "1106": "TUTOM - ARGE",
+    "1107": "TUTOM - ARGE",
+    "1108": "İŞ KULE - 3",
+    "1109": "ANKARA TEKNOKENT",
+    "1110": "ANKARA TEKNOKENT",
+    "1111": "ANKARA TEKNOKENT",
+    "1112": "ANKARA TEKNOKENT",
+    "1113": "İSTANBUL TEKNOKENT",
+    "1114": "ANKARA TEKNOKENT",
+    "1115": "ANKARA TEKNOKENT",
+    "1116": "TUTOM - ARGE",
+    "1117": "TUTOM - ARGE",
+    "1118": "TUTOM - ARGE",
+    "1119": "TUTOM - ARGE",
+    "1120": "ANKARA TEKNOKENT",
+    "1121": "İSTANBUL TEKNOKENT",
+    "1122": "TUTOM - ARGE",
+    "1123": "ANKARA TEKNOKENT",
+    "1124": "İSTANBUL TEKNOKENT",
+    "1125": "İSTANBUL TEKNOKENT",
+    "1126": "İSTANBUL TEKNOKENT",
+}
+
+
+def _normalize_location_value(raw_loc: object, sicil_no: str = "", fallback_idx: int = 0) -> str:
+    s_clean = str(sicil_no or "").strip()
+    if s_clean in LOKASYON_BY_SICIL:
+        return LOKASYON_BY_SICIL[s_clean]
+
+    txt = " ".join(str(raw_loc or "").split()).strip()
+    low = txt.lower().replace("İ", "i").replace("I", "ı")
+    if "ankara" in low and "teknokent" in low:
+        return "ANKARA TEKNOKENT"
+    if "istanbul" in low and "teknokent" in low:
+        return "İSTANBUL TEKNOKENT"
+    if "tutom" in low and "arge" in low:
+        return "TUTOM - ARGE"
+    if "tutom" in low:
+        return "TUTOM"
+    if "kule" in low:
+        return "İŞ KULE - 3"
+    if txt in LOKASYON_OPTIONS:
+        return txt
+    return LOKASYON_OPTIONS[fallback_idx % len(LOKASYON_OPTIONS)]
+
 
 def _is_completed_flag(val: object) -> bool:
     if isinstance(val, bool):
@@ -549,15 +710,6 @@ YONETICI_OPTIONS = [
     "Yetkinlik Merkezi Lideri",
     "Direktör",
     "Genel Müdür Yardımcısı",
-]
-
-LOKASYON_OPTIONS = [
-    "İstanbul - Ataşehir",
-    "İstanbul - Teknopark (Pendik)",
-    "İstanbul - Levent",
-    "Ankara - ODTÜ Teknokent",
-    "İzmir - Ofis",
-    "Uzaktan / Hibrit",
 ]
 
 IK_IS_ORTAGI_OPTIONS = [
@@ -893,40 +1045,28 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
                 "birim": b_val,
                 "bolum": str(row.get("bolum", "") or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]),
                 "yonetici_bilgisi": yon_val,
-                "lokasyon": str(row.get("lokasyon", "") or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]),
+                "lokasyon": _normalize_location_value(row.get("lokasyon", ""), sicil_no=sicil, fallback_idx=idx),
                 "ise_giris_tarihi": _format_tr_date_input(row.get("ise_giris_tarihi", "")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}",
                 "ik_is_ortagi": str(row.get("ik_is_ortagi", "") or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]),
             }
 
-    sample_extra = {
-        "1001": {
-            "sicil_no": "1001",
-            "ad_soyad": "Ahmet Yılmaz",
-            "gmy": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
-            "departman": "Yazılım Geliştirme Departmanı",
-            "birim": "10000474-Kurumsal Uygulamalar",
-            "bolum": "Ölçme ve Raporlama",
-            "yonetici_bilgisi": "Birim Yöneticisi - 1",
-            "lokasyon": "İstanbul - Ataşehir",
-            "ise_giris_tarihi": "14.03.2022",
-            "ik_is_ortagi": "Şeyma Oruç",
-        },
-        "1002": {
-            "sicil_no": "1002",
-            "ad_soyad": "Zeynep Kaya",
-            "gmy": "10000028-Teknoloji, Yapay Zeka ve Sürekli İyileştirme",
-            "departman": "Veri ve Yapay Zeka Departmanı",
-            "birim": "10000182-Veri ve Yapay Zeka Uygulamaları",
-            "bolum": "Dönüşüm Atölyesi",
-            "yonetici_bilgisi": "Yetkinlik Merkezi Lideri",
-            "lokasyon": "İstanbul - Teknopark (Pendik)",
-            "ise_giris_tarihi": "01.09.2023",
-            "ik_is_ortagi": "Şeyma Oruç",
-        },
-    }
-    for k, v in sample_extra.items():
-        if k not in directory:
-            directory[k] = v
+    for idx_s, (sic_k, loc_v) in enumerate(LOKASYON_BY_SICIL.items()):
+        if sic_k not in directory:
+            g_m, b_m = all_gmy_birim[idx_s % len(all_gmy_birim)]
+            directory[sic_k] = {
+                "sicil_no": sic_k,
+                "ad_soyad": f"Çalışan {int(sic_k) - 1000 if sic_k.isdigit() and int(sic_k) >= 1001 else sic_k}",
+                "gmy": g_m,
+                "departman": DEPARTMAN_OPTIONS[idx_s % len(DEPARTMAN_OPTIONS)],
+                "birim": b_m,
+                "bolum": BOLUM_OPTIONS[idx_s % len(BOLUM_OPTIONS)],
+                "yonetici_bilgisi": YONETICI_OPTIONS[idx_s % len(YONETICI_OPTIONS)],
+                "lokasyon": loc_v,
+                "ise_giris_tarihi": f"15.0{(idx_s % 8) + 1}.202{(idx_s % 5) + 1}",
+                "ik_is_ortagi": IK_IS_ORTAGI_OPTIONS[idx_s % len(IK_IS_ORTAGI_OPTIONS)],
+            }
+        else:
+            directory[sic_k]["lokasyon"] = loc_v
 
     return directory
 
@@ -1371,10 +1511,11 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
         dept_val = _clean(r.get("departman") or r.get("Departman")) or DEPARTMAN_OPTIONS[idx % len(DEPARTMAN_OPTIONS)]
         bolum_val = _clean(r.get("bolum") or r.get("Bölüm")) or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]
         yon_val = _clean(r.get("yonetici_bilgisi") or r.get("Yönetici Bilgisi")) or YONETICI_OPTIONS[idx % len(YONETICI_OPTIONS)]
-        lok_val = _clean(r.get("lokasyon") or r.get("Lokasyon")) or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]
+        sicil_val = _clean(r.get("sicil_no") or r.get("Sicil") or r.get("Sicil No")) or str(1001 + idx)
+        raw_lok = _clean(r.get("lokasyon") or r.get("Lokasyon"))
+        lok_val = _normalize_location_value(raw_lok, sicil_no=sicil_val, fallback_idx=idx)
         ise_giris_val = _format_tr_date_input(r.get("ise_giris_tarihi") or r.get("İşe Giriş Tarihi")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}"
         ik_ortak_val = _clean(r.get("ik_is_ortagi") or r.get("İK İş Ortağı")) or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]
-        sicil_val = _clean(r.get("sicil_no") or r.get("Sicil") or r.get("Sicil No")) or str(1001 + idx)
         ad_soyad_val = _clean(r.get("ad_soyad") or r.get("Ad Soyad")) or f"Kayıt {idx + 1}"
         g_tarih = _clean(r.get("gorusme_tarihi") or r.get("Görüşme Tarihi") or r.get("Görüşme Tarihi (Ay/Gün/Yıl)")) or "2026-06-04"
 
@@ -1498,9 +1639,12 @@ def _sync_action_plan_to_df(df: pd.DataFrame) -> pd.DataFrame:
         out["aksiyon_tamamlanma_tarihi"] = ""
     if "aksiyon_tamamlanma_notu" not in out.columns:
         out["aksiyon_tamamlanma_notu"] = ""
+    if "lokasyon" not in out.columns:
+        out["lokasyon"] = ""
 
     for idx, row in out.iterrows():
         sic = str(row.get("sicil_no", "") or "").strip()
+        out.at[idx, "lokasyon"] = _normalize_location_value(row.get("lokasyon", ""), sicil_no=sic, fallback_idx=idx)
         done_note = str(row.get("aksiyon_tamamlanma_notu", "") or "").strip()
         done_flag = _is_completed_flag(row.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_note)
 
@@ -1692,7 +1836,7 @@ def build_excel_template() -> bytes:
 
     sample_row = {
         "Sicil": "1001",
-        "Ad Soyad": "Ahmet Yılmaz",
+        "Ad Soyad": "Çalışan 1",
         "Görüşme Tarihi": date.today().strftime("%d.%m.%Y"),
         "Dönem": "2026 - 2. Dönem",
         "Genel Müdür Yardımcılığı": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
@@ -1700,7 +1844,7 @@ def build_excel_template() -> bytes:
         "Birim": "10000474-Kurumsal Uygulamalar",
         "Bölüm": "Ölçme ve Raporlama",
         "Yönetici Bilgisi": "Birim Yöneticisi - 1",
-        "Lokasyon": "İstanbul - Ataşehir",
+        "Lokasyon": "ANKARA TEKNOKENT",
         "İşe Giriş Tarihi": "14.03.2022",
         "İK İş Ortağı": "Şeyma Oruç",
         "Çalışma Modeli": "Hibrit",
@@ -1748,7 +1892,7 @@ def import_excel_records(uploaded_file) -> tuple[int, str]:
 
 def build_excel_export(df_raw: pd.DataFrame) -> bytes:
     bio = io.BytesIO()
-    df_clean = df_raw.copy()
+    df_clean = _sync_action_plan_to_df(df_raw)
     if "aksiyon_tamamlandi" in df_clean.columns:
         df_clean["aksiyon_tamamlandi"] = df_clean["aksiyon_tamamlandi"].apply(
             lambda x: "Evet" if _is_completed_flag(x) else "Hayır"
@@ -2257,7 +2401,9 @@ if sayfa == "1-1 Görüşme Kayıt":
             return opts.index(val)
         return fallback
 
-    prefill = edit_record_row if edit_record_row else (emp_info if emp_info else {})
+    prefill = dict(edit_record_row) if edit_record_row else (dict(emp_info) if emp_info else {})
+    if sicil_input:
+        prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
     form_scope = f"{edit_kayit_id or 'new'}_{sicil_input or 'empty'}"
 
     with s_col2:
@@ -2341,10 +2487,11 @@ if sayfa == "1-1 Görüşme Kayıt":
             key=f"inp_ik_ortagi_{form_scope}",
         )
     with c8:
+        loc_val_clean = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
         sec_lokasyon = st.selectbox(
             "Lokasyon",
             LOKASYON_OPTIONS,
-            index=_pick_idx(LOKASYON_OPTIONS, str(prefill.get("lokasyon", "")), 0),
+            index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
             key=f"inp_lokasyon_{form_scope}",
         )
 
@@ -2538,8 +2685,7 @@ elif is_presentation_mod:
         ik_vals = sorted(df_scoped["ik_is_ortagi"].dropna().unique().tolist()) if "ik_is_ortagi" in df_scoped.columns and not df_scoped.empty else IK_IS_ORTAGI_OPTIONS
         sel_ik_f = st.selectbox("İK İş Ortağı", ["Tümü"] + ik_vals)
     with f8:
-        lok_vals = sorted(df_scoped["lokasyon"].dropna().unique().tolist()) if "lokasyon" in df_scoped.columns and not df_scoped.empty else LOKASYON_OPTIONS
-        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + lok_vals)
+        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + LOKASYON_OPTIONS)
 
     df_view = df_scoped.copy()
     if not df_view.empty:
@@ -3206,7 +3352,7 @@ else:
     if df_all.empty:
         st.info("Henüz kayıt bulunmuyor.")
     else:
-        df_pool_view = df_all.copy()
+        df_pool_view = _sync_action_plan_to_df(df_all)
         if "aksiyon_tamamlandi" in df_pool_view.columns:
             df_pool_view["aksiyon_tamamlandi"] = df_pool_view["aksiyon_tamamlandi"].apply(
                 lambda x: "Evet" if _is_completed_flag(x) else "Hayır"
