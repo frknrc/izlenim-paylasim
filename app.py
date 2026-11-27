@@ -42,14 +42,66 @@ NEG_COLOR = "#F87171"
 st.markdown(
     f"""
     <style>
-        .stApp {{
-            background-color: {BG_DARK};
-            color: {TEXT_LIGHT};
+        /* Ana arka plan ve genel metin rengini her tema modunda (System / Light / Dark) sabitle */
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stMain"] {{
+            background-color: {BG_DARK} !important;
+            color: {TEXT_LIGHT} !important;
+        }}
+        [data-testid="stHeader"] {{
+            background-color: {BG_DARK} !important;
+            color: {TEXT_LIGHT} !important;
+        }}
+        [data-testid="stToolbar"] button,
+        [data-testid="stToolbar"] svg {{
+            color: {TEXT_LIGHT} !important;
+            fill: {TEXT_LIGHT} !important;
+        }}
+        /* Sağ üst 3 nokta açılır menüsü (System / Light / Dark / Print) okunurluğu */
+        [data-testid="stPopover"] > div,
+        [data-testid="stPopoverBody"],
+        div[role="dialog"],
+        ul[role="listbox"],
+        ul[role="menu"] {{
+            background-color: {CARD_DARK} !important;
+            color: {TEXT_LIGHT} !important;
+            border: 1px solid {CARD_BORDER} !important;
+        }}
+        [data-testid="stPopoverBody"] *,
+        div[role="dialog"] *,
+        ul[role="listbox"] *,
+        ul[role="menu"] * {{
+            color: {TEXT_LIGHT} !important;
         }}
         [data-testid="stSidebar"] {{
-            background-color: {CARD_DARK};
+            background-color: {CARD_DARK} !important;
             border-right: 1px solid {CARD_BORDER};
+            color: {TEXT_LIGHT} !important;
         }}
+        /* Form etiketleri, başlıklar ve genel paragraf metinleri */
+        .stApp label,
+        .stApp label p,
+        .stApp [data-testid="stWidgetLabel"] p,
+        .stApp [data-testid="stMarkdownContainer"] p,
+        .stApp [data-testid="stMarkdownContainer"] li,
+        .stApp [data-testid="stCaptionContainer"],
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4 {{
+            color: {TEXT_LIGHT} !important;
+        }}
+        .stApp code {{
+            background-color: #1E293B !important;
+            color: {TEAL} !important;
+            border: 1px solid {CARD_BORDER};
+        }}
+        /* Form kapsayıcı kenarlığı */
+        [data-testid="stForm"] {{
+            background-color: {CARD_DARK} !important;
+            border: 1px solid {CARD_BORDER} !important;
+            border-radius: 12px;
+            padding: 1.25rem;
+        }}
+        /* Giriş kutuları ve placeholder metinleri */
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea,
         .stSelectbox > div > div > div,
@@ -58,7 +110,14 @@ st.markdown(
         div[data-testid="stDateInput"] input {{
             background-color: #0F172A !important;
             color: {TEXT_LIGHT} !important;
+            -webkit-text-fill-color: {TEXT_LIGHT} !important;
             border-color: {CARD_BORDER} !important;
+        }}
+        .stTextInput input::placeholder,
+        .stTextArea textarea::placeholder {{
+            color: {TEXT_MUTED} !important;
+            -webkit-text-fill-color: {TEXT_MUTED} !important;
+            opacity: 1 !important;
         }}
         /* Streamlit metin kutularındaki varsayılan İngilizce 'Press Enter to apply' ipucunu gizle */
         div[data-testid="stTextInput"] div[data-testid="InputInstructions"] {{
@@ -67,17 +126,22 @@ st.markdown(
         div[data-testid="stDateInput"] > div {{
             max-width: 240px;
         }}
-        .stButton > button, .stDownloadButton > button {{
-            background: linear-gradient(90deg, {TEAL_SOFT} 0%, {PURPLE} 100%);
-            color: #FFFFFF;
-            font-weight: 600;
-            border: none;
+        /* Butonlar (Form içi submit butonları dahil) */
+        .stButton > button,
+        .stDownloadButton > button,
+        [data-testid="stFormSubmitButton"] > button {{
+            background: linear-gradient(90deg, {TEAL_SOFT} 0%, {PURPLE} 100%) !important;
+            color: #FFFFFF !important;
+            font-weight: 600 !important;
+            border: none !important;
             border-radius: 8px;
             padding: 0.5rem 1rem;
         }}
-        .stButton > button:hover, .stDownloadButton > button:hover {{
+        .stButton > button:hover,
+        .stDownloadButton > button:hover,
+        [data-testid="stFormSubmitButton"] > button:hover {{
             opacity: 0.92;
-            color: #FFFFFF;
+            color: #FFFFFF !important;
         }}
         .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
