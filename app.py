@@ -2671,26 +2671,40 @@ elif is_presentation_mod:
     if df_view.empty:
         st.info("Seçili filtrelere uygun görüşme kaydı bulunamadı.")
     else:
-        st.subheader(f"Aksiyon Durumu — Açık vs Kapalı Aksiyonlar (Toplam: {toplam_aksiyon_adet})")
+        st.subheader("📊 Aksiyon Durumu")
         df_aks_durum = pd.DataFrame({
-            "Aksiyon Durumu": ["Açık Aksiyonlar", "Kapalı Aksiyonlar"],
-            "Adet": [acik_aksiyon_adet, kapali_aksiyon_adet],
+            "Kategori": ["Kapalı Aksiyon", "Açık Aksiyon", "Toplam Aksiyon"],
+            "Adet": [kapali_aksiyon_adet, acik_aksiyon_adet, toplam_aksiyon_adet],
         })
+        max_aks_x = max(5, int(toplam_aksiyon_adet * 1.18))
         fig_aks = px.bar(
             df_aks_durum,
-            x="Aksiyon Durumu",
-            y="Adet",
+            x="Adet",
+            y="Kategori",
             text="Adet",
-            color="Aksiyon Durumu",
-            color_discrete_map={"Açık Aksiyonlar": PURPLE, "Kapalı Aksiyonlar": POS_COLOR},
+            orientation="h",
+            color="Kategori",
+            range_x=[0, max_aks_x],
+            color_discrete_map={
+                "Toplam Aksiyon": TEAL,
+                "Açık Aksiyon": PURPLE_LIGHT,
+                "Kapalı Aksiyon": POS_COLOR,
+            },
+        )
+        fig_aks.update_traces(
+            textposition="outside",
+            textfont=dict(size=13, color=TEXT_LIGHT),
+            cliponaxis=False,
         )
         fig_aks.update_layout(
             paper_bgcolor=CARD_DARK,
             plot_bgcolor=CARD_DARK,
             font_color=TEXT_LIGHT,
             showlegend=False,
-            height=275,
-            margin=dict(l=15, r=15, t=20, b=20),
+            xaxis_title="Aksiyon Adedi",
+            yaxis_title="",
+            height=230,
+            margin=dict(l=15, r=35, t=15, b=20),
         )
         st.plotly_chart(fig_aks, use_container_width=True)
 
