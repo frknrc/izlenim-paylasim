@@ -25,6 +25,15 @@ def now_local() -> datetime:
     return datetime.now(LOCAL_TZ)
 
 
+def tr_lower(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("İ", "i")
+        .replace("I", "ı")
+        .lower()
+    )
+
+
 st.set_page_config(
     page_title="İzlenim Paylaşım Paneli",
     page_icon="💡",
@@ -490,7 +499,7 @@ def _normalize_location_value(raw_loc: object, sicil_no: str = "", fallback_idx:
         return LOKASYON_BY_SICIL[s_clean]
 
     txt = " ".join(str(raw_loc or "").split()).strip()
-    low = txt.lower().replace("İ", "i").replace("I", "ı")
+    low = tr_lower(txt)
     if "ankara" in low and "teknokent" in low:
         return "ANKARA TEKNOKENT"
     if "istanbul" in low and "teknokent" in low:
@@ -511,7 +520,17 @@ def _is_completed_flag(val: object) -> bool:
         return val
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return False
-    return str(val).strip().lower() in {"true", "1", "evet", "yes", "tamamlandi", "tamamlandı", "done", "kapalı", "kapali"}
+    return tr_lower(str(val).strip()) in {
+        "true",
+        "1",
+        "evet",
+        "yes",
+        "tamamlandi",
+        "tamamlandı",
+        "done",
+        "kapalı",
+        "kapali",
+    }
 
 
 def _has_completion_note(note_val: object) -> bool:
@@ -795,23 +814,28 @@ SCORE_ALIAS_MAP = {
         "Softtech'e Aidiyet",
         "Aidiyet",
         "st Memnuniyeti",
+        "Memnuniyet",
+        "Genel Memnuniyet (1-5)",
     ],
     "p_ekip_motivasyonu": [
         "p_ekip_motivasyonu",
         "Ekip Motivasyonu",
         "Ekip Motivasyonu Puanı",
+        "Ekip Motivasyonu (1-5)",
     ],
     "p_kendi_motivasyonu": [
         "p_kendi_motivasyonu",
         "Kendi Motivasyonu",
         "Bireysel Motivasyon",
         "Kendi Motivasyonu Puanı",
+        "Kendi Motivasyonu (1-5)",
     ],
     "p_is_yasam_dengesi": [
         "p_is_yasam_dengesi",
         "İş Yaşam Dengesi",
         "İş-Yaşam Dengesi",
         "İş Yaşam Dengesi Puanı",
+        "İş Yaşam Dengesi (1-5)",
     ],
     "p_1_yonetici_iletisimi": [
         "p_1_yonetici_iletisimi",
@@ -820,6 +844,7 @@ SCORE_ALIAS_MAP = {
         "Yönetici İletişimi",
         "Birinci Yönetici İletişimi",
         "1. Yönetici İletişimi Puanı",
+        "1. Yönetici İletişimi (1-5)",
     ],
     "p_ym_degerlendirme": [
         "p_ym_degerlendirme",
@@ -856,6 +881,7 @@ SCORE_ALIAS_MAP = {
         "YZ Kullanım Sıklığı",
         "YZ Kullanımı",
         "Yapay Zeka Kullanım Sıklığı (CodeMantis, Amigo, Asistan vb)",
+        "YZ Kullanım Sıklığı (CodeMantis, Amigo, Asistan vb.)",
     ],
 }
 
@@ -896,7 +922,7 @@ def _format_tr_date_input(raw_val: object) -> str:
 def _snap_half_step(raw_val: object) -> float | None:
     if raw_val is None or raw_val == "":
         return None
-    if isinstance(raw_val, str) and raw_val.strip().lower() in ("boş", "bos", "none", "nan", "-"):
+    if isinstance(raw_val, str) and tr_lower(raw_val.strip()) in ("boş", "bos", "none", "nan", "-"):
         return None
     try:
         if isinstance(raw_val, float) and np.isnan(raw_val):
@@ -905,7 +931,7 @@ def _snap_half_step(raw_val: object) -> float | None:
         if not match:
             return None
         f_val = float(match.group(1).replace(",", "."))
-        if np.isnan(f_val):
+        if np.isnan(f_val) or f_val <= 0:
             return None
         clamped = max(1.0, min(5.0, f_val))
         snapped = round(clamped * 2.0) / 2.0
@@ -915,7 +941,7 @@ def _snap_half_step(raw_val: object) -> float | None:
 
 
 def _norm_key(k: str) -> str:
-    s = str(k or "").lower().replace("İ", "i").replace("I", "ı")
+    s = tr_lower(str(k or ""))
     s = re.sub(r"[^a-zçğıöşü0-9]+", "", s)
     return s
 
@@ -936,7 +962,7 @@ def _extract_score_from_record(r: dict, p_key: str, p_label: str) -> float | Non
                 return sc
 
     for r_k, r_v in r.items():
-        rk_low = str(r_k).lower().replace("İ", "i").replace("I", "ı")
+        rk_low = tr_lower(str(r_k))
         if p_key == "p_genel_memnuniyet" and ("memnuniyet" in rk_low or "aidiyet" in rk_low) and "yorum" not in rk_low:
             sc = _snap_half_step(r_v)
             if sc is not None:
@@ -945,12 +971,30 @@ def _extract_score_from_record(r: dict, p_key: str, p_label: str) -> float | Non
             sc = _snap_half_step(r_v)
             if sc is not None:
                 return sc
-        elif p_key == "p_yz_kullanim" and ("yapay zeka" in rk_low or "yz " in rk_low or rk_low.startswith("yz") or "codemantis" in rk_low) and "yorum" not in rk_low:
+        elif (
+            p_key == "p_yz_kullanim"
+            and ("yapay zeka" in rk_low or "yz " in rk_low or rk_low.startswith("yz") or "codemantis" in rk_low)
+            and "yorum" not in rk_low
+        ):
             sc = _snap_half_step(r_v)
             if sc is not None:
                 return sc
 
     return None
+
+
+def _normalize_scores_on_df(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    records = out.to_dict(orient="records")
+    for p_key, p_label in PUAN_BASLIKLARI:
+        col_vals = []
+        for r in records:
+            sc = _extract_score_from_record(r, p_key, p_label)
+            col_vals.append(float(sc) if sc is not None else np.nan)
+        out[p_key] = pd.to_numeric(pd.Series(col_vals, index=out.index), errors="coerce")
+    return out
 
 
 def _has_meaningful_action_note(note_text: object) -> bool:
@@ -959,7 +1003,7 @@ def _has_meaningful_action_note(note_text: object) -> bool:
     s = str(note_text).strip()
     if not s:
         return False
-    return s.lower() not in {"yok", "-", "hayır", "hayir", "none", "null", "boş", "bos"}
+    return tr_lower(s) not in {"yok", "-", "hayır", "hayir", "none", "null", "boş", "bos"}
 
 
 def render_synced_score_row(p_key: str, p_label: str, default_val: float | None, scope_tag: str):
@@ -1089,7 +1133,8 @@ POS_SIGNALS = [
     "güçlü", "iyi", "olumlu", "memnun", "destekleyici", "başarılı", "verimli",
     "net", "açık", "kolay", "hızlı", "değerli", "faydalı", "yüksek", "yapıcı",
     "güven", "ulaşılabilir", "tatmin", "sorun yok", "akıcı", "uyumlu",
-    "destekliyor", "katkı sağlıyor", "düzenli", "memnunum",
+    "destekliyor", "katkı sağlıyor", "düzenli", "memnunum", "keyifli", "rahat",
+    "sağlıklı", "esnek", "şeffaf", "yardımlaşma", "ekip ruhu", "sinerji",
 ]
 
 TR_STOPWORDS = {
@@ -1192,14 +1237,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
 
 
 def normalize_turkish_text(text: str) -> str:
-    low = text.lower()
-    low = (
-        low.replace("İ", "i")
-        .replace("I", "ı")
-        .replace("’", "'")
-        .replace("“", '"')
-        .replace("”", '"')
-    )
+    low = tr_lower(text).replace("’", "'").replace("“", '"').replace("”", '"')
     for pattern, canonical in SEMANTIC_EQUIVALENTS:
         low = re.sub(pattern, f" {canonical} ", low)
 
@@ -1215,7 +1253,7 @@ def normalize_turkish_text(text: str) -> str:
 
 
 def extract_canonical_topics(text: str) -> list[str]:
-    low = text.lower().replace("İ", "i").replace("I", "ı")
+    low = tr_lower(text)
     matched = []
     for pattern, canonical in SEMANTIC_EQUIVALENTS:
         if re.search(pattern, low):
@@ -1238,10 +1276,10 @@ def split_clauses(text: str) -> list[str]:
     return result if result else [cleaned]
 
 
-def classify_clause(clause: str, row_duygu: str = "") -> str:
-    low = clause.lower()
-    pos_hits = sum(1 for w in POS_SIGNALS if w in low)
-    neg_hits = sum(1 for w in NEG_SIGNALS if w in low)
+def classify_clause(clause: str, row_duygu: str = "", default_dir: str = "olumlu") -> str:
+    low = tr_lower(clause)
+    pos_hits = sum(1 for w in POS_SIGNALS if tr_lower(w) in low)
+    neg_hits = sum(1 for w in NEG_SIGNALS if tr_lower(w) in low)
     if neg_hits > pos_hits:
         return "olumsuz"
     if pos_hits > neg_hits:
@@ -1250,7 +1288,7 @@ def classify_clause(clause: str, row_duygu: str = "") -> str:
         return "olumsuz"
     if row_duygu == "Olumlu":
         return "olumlu"
-    return "olumlu"
+    return default_dir
 
 
 def cluster_similar_statements(
@@ -1270,7 +1308,7 @@ def cluster_similar_statements(
             continue
         norm = normalize_turkish_text(clean_txt)
         filtered_records.append((p_id, clean_txt))
-        norm_docs.append(norm if norm.strip() else clean_txt.lower())
+        norm_docs.append(norm if norm.strip() else tr_lower(clean_txt))
 
     if not filtered_records:
         return []
@@ -1439,8 +1477,9 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
         for tc in text_cols:
             val = row.get(tc, "")
             if pd.notna(val) and str(val).strip():
+                def_dir = "olumsuz" if tc in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
                 for c_item in split_clauses(str(val)):
-                    if classify_clause(c_item, row_duygu) == "olumsuz":
+                    if classify_clause(c_item, row_duygu, default_dir=def_dir) == "olumsuz":
                         dept_neg_all.append((person_idx, c_item))
                     else:
                         dept_pos_all.append((person_idx, c_item))
@@ -1471,8 +1510,9 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
                 for tc in text_cols:
                     val = row.get(tc, "")
                     if pd.notna(val) and str(val).strip():
+                        def_dir = "olumsuz" if tc in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
                         for c_item in split_clauses(str(val)):
-                            if classify_clause(c_item, row_duygu) == "olumsuz":
+                            if classify_clause(c_item, row_duygu, default_dir=def_dir) == "olumsuz":
                                 b_neg.append((p_idx, c_item))
                             else:
                                 b_pos.append((p_idx, c_item))
@@ -1718,7 +1758,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 "ana_tema": _clean(r.get("ana_tema"))
                 or (
                     "Çalışma Modeli / Hibrit / İş-Yaşam"
-                    if any(w in q10_txt.lower() for w in ["uzaktan", "remote", "ofis", "çalışma"])
+                    if any(w in tr_lower(q10_txt) for w in ["uzaktan", "remote", "ofis", "çalışma"])
                     else "Güven ve Kültür"
                 ),
                 "aksiyon_ihtiyaci": aksiyon_var,
@@ -1738,13 +1778,13 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 },
             }
         )
-    return pd.DataFrame(rows_out)
+    return _normalize_scores_on_df(pd.DataFrame(rows_out))
 
 
 def _sync_action_plan_to_df(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return df
-    out = df.copy()
+    out = _normalize_scores_on_df(df.copy())
     if "aksiyon_tamamlandi" not in out.columns:
         out["aksiyon_tamamlandi"] = False
     if "aksiyon_tamamlanma_tarihi" not in out.columns:
@@ -1810,10 +1850,7 @@ def load_records() -> tuple[pd.DataFrame, str]:
             ws = spreadsheet.worksheet("gorusmeler")
             data = ws.get_all_records()
             if data:
-                df = pd.DataFrame(data)
-                for col, _ in PUAN_BASLIKLARI:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                df = _normalize_scores_on_df(pd.DataFrame(data))
                 df = _sync_action_plan_to_df(df)
                 return df, f"Google Sheets ({len(df)} Kayıt)"
             return pd.DataFrame(columns=st.session_state.local_df.columns), "Google Sheets (0 Kayıt)"
@@ -1914,11 +1951,11 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
         idx_target = df_curr[df_curr["kayit_id"] == edit_kayit_id].index[0]
         for k, v in record.items():
             df_curr.at[idx_target, k] = v
-        st.session_state.local_df = df_curr
+        st.session_state.local_df = _normalize_scores_on_df(df_curr)
         return True, f"Kayıt ({edit_kayit_id}) başarıyla güncellendi."
 
     new_row = pd.DataFrame([record])
-    st.session_state.local_df = pd.concat([df_curr, new_row], ignore_index=True)
+    st.session_state.local_df = _normalize_scores_on_df(pd.concat([df_curr, new_row], ignore_index=True))
     return True, "Yeni görüşme kaydı havuza eklendi."
 
 
@@ -2933,6 +2970,7 @@ elif is_presentation_mod:
         if sel_lok_f != "Tümü" and "lokasyon" in df_view.columns:
             df_view = df_view[df_view["lokasyon"] == sel_lok_f]
 
+    df_view = _normalize_scores_on_df(df_view)
     mood_slot.markdown(render_corner_mood_widget(df_view, highlight_positive=True), unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
@@ -3299,8 +3337,9 @@ elif is_presentation_mod:
                     raw_v = r_item.get(c_key, "")
                     if pd.isna(raw_v) or not str(raw_v).strip():
                         continue
+                    def_dir = "olumsuz" if c_key in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
                     for cl in split_clauses(str(raw_v)):
-                        cl_dir = classify_clause(cl, r_duygu)
+                        cl_dir = classify_clause(cl, r_duygu, default_dir=def_dir)
                         if direction is None or cl_dir == direction:
                             recs.append((p_idx, cl))
             return cluster_similar_statements(recs, top_n=top_n)
@@ -3315,7 +3354,7 @@ elif is_presentation_mod:
                 if not txt:
                     continue
                 total_ans += 1
-                low = txt.lower().replace("İ", "i").replace("I", "ı")
+                low = tr_lower(txt)
                 if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış"]):
                     buckets["Tam Uzaktan / Evden"] += 1
                 elif any(k in low for k in ["ofis", "tam zamanlı ofis", "her gün ofis"]):
@@ -3435,11 +3474,15 @@ elif is_presentation_mod:
             g_col, k_col = st.columns(2)
             with g_col:
                 st.markdown("**✅ Güçlü Alanlar**")
-                for b_item in _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati", "q09_vizyon_strateji"], top_n=4, direction="olumlu"):
+                pos_bullets = _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati", "q09_vizyon_strateji"], top_n=4, direction="olumlu")
+                if not pos_bullets:
+                    pos_bullets = _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati"], top_n=4)
+                for b_item in pos_bullets:
                     st.markdown(f"- {b_item}")
             with k_col:
                 st.markdown("**⚠️ Gelişime Açık Alanlar**")
-                for b_item in _top_short_bullets(["q10_degistirmek_istenen", "q04_ekip_iyilestirme", "q02_guclu_yonler"], top_n=4, direction="olumsuz"):
+                neg_bullets = _top_short_bullets(["q10_degistirmek_istenen", "q04_ekip_iyilestirme", "q02_guclu_yonler"], top_n=4, direction="olumsuz")
+                for b_item in neg_bullets:
                     st.markdown(f"- {b_item}")
 
         elif active_card == "card_2_karar":
@@ -3575,8 +3618,8 @@ else:
             placeholder="örnek: 1001, uzaktan, onay, terfi, Mobil...",
         )
         if arama_metni and arama_metni.strip():
-            q_low = arama_metni.strip().lower()
-            mask = df_all.apply(lambda s: s.astype(str).str.lower().str.contains(q_low, na=False)).any(axis=1)
+            q_low = tr_lower(arama_metni.strip())
+            mask = df_all.apply(lambda s: s.astype(str).apply(tr_lower).str.contains(q_low, na=False)).any(axis=1)
             df_all = df_all[mask].copy()
             st.caption(f"Filtrelenen kayıt sayısı: {len(df_all)}")
             mood_slot.markdown(render_corner_mood_widget(df_all, highlight_positive=True), unsafe_allow_html=True)
