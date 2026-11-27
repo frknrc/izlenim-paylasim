@@ -163,7 +163,7 @@ st.markdown(
             opacity: 0.92;
             color: #FFFFFF !important;
         }}
-        /* Üst başlık ve sağ duygu kutusu için orantılı yükseklik ve hizalama */
+        /* Üst başlık ve sağ duygu kutusu için eşit yükseklik ve hizalama */
         .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
             border: 1px solid {CARD_BORDER};
@@ -272,6 +272,14 @@ st.markdown(
             border-radius: 10px;
             padding: 1rem 1.15rem;
             margin-bottom: 0.85rem;
+        }}
+        .action-note-box {{
+            background-color: {CARD_DARK};
+            border: 1px solid {CARD_BORDER};
+            border-left: 4px solid {PURPLE_LIGHT};
+            border-radius: 10px;
+            padding: 0.85rem 1.1rem;
+            margin-bottom: 0.65rem;
         }}
         .criteria-card {{
             background-color: {CARD_DARK};
@@ -609,6 +617,15 @@ def _snap_half_step(raw_val: object) -> float | None:
         return None
 
 
+def _has_meaningful_action_note(note_text: object) -> bool:
+    if note_text is None:
+        return False
+    s = str(note_text).strip()
+    if not s:
+        return False
+    return s.lower() not in {"yok", "-", "hayır", "hayir", "none", "null", "boş", "bos"}
+
+
 def render_synced_score_row(p_key: str, p_label: str, default_val: float | None, scope_tag: str):
     state_key = f"score_val_{scope_tag}_{p_key}"
     bar_key = f"score_bar_{scope_tag}_{p_key}"
@@ -738,7 +755,7 @@ COLUMN_LABELS = {
     "ana_tema": "Öne Çıkan Ana Tema",
     "aksiyon_ihtiyaci": "Aksiyon İhtiyacı",
     "aksiyon_seviyesi": "Aksiyon Seviyesi",
-    "aksiyon_notu": "Aksiyon Planı / Notu",
+    "aksiyon_notu": "Aksiyon Planı",
     "q_kapanis": "Kapanış / Ek Not",
     **dict(GORUSME_SORULARI),
     **dict(IK_BASLIKLARI),
@@ -1454,7 +1471,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
             aksiyon_var = (
                 "Evet"
                 if (
-                    (aksiyon_not_raw and len(aksiyon_not_raw) > 5)
+                    _has_meaningful_action_note(aksiyon_not_raw)
                     or (
                         q10_txt
                         and len(q10_txt) > 12
@@ -1498,7 +1515,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 ),
                 "aksiyon_ihtiyaci": aksiyon_var,
                 "aksiyon_seviyesi": _clean(r.get("aksiyon_seviyesi")) or ("Birim / YM" if aksiyon_var == "Evet" else "Yok"),
-                "aksiyon_notu": aksiyon_not_raw or (q10_txt if aksiyon_var == "Evet" else ""),
+                "aksiyon_notu": aksiyon_not_raw if _has_meaningful_action_note(aksiyon_not_raw) else (q10_txt if aksiyon_var == "Evet" else ""),
                 "q01_calisma_hayati": _clean(r.get("q01_calisma_hayati") or r.get("st'te çalışma hayatın nasıl gidiyor?")),
                 "q02_guclu_yonler": _clean(r.get("q02_guclu_yonler") or r.get("Sana göre st’teki olumlu/güçlü yönler neler?")),
                 "q03_ekip_rol_tatmin": _clean(r.get("q03_ekip_rol_tatmin") or r.get("Görev aldığın ekip, rolün ve projelerin seni tatmin ediyor, sana katkı sağlıyor mu?")),
@@ -1649,7 +1666,7 @@ def build_excel_template() -> bytes:
         "Çalışma Modeli": "Hibrit",
         "Duygu Durumu": "Olumlu",
         "Aksiyon İhtiyacı": "Evet",
-        "Aksiyon Planı": "Yöneticisi ile kariyer hedefi toplantısı planlanacak.",
+        "Aksiyon Planı": "Çalışanın kaydına; ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
         "Genel Memnuniyet": 4.5,
         "Ekip Motivasyonu": 4.0,
     }
@@ -2121,7 +2138,7 @@ with st.sidebar:
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
-# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (orantılı sütunlar)
+# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (eşit yükseklik)
 hdr_left, hdr_right = st.columns([2.1, 1.9], vertical_alignment="top")
 with hdr_left:
     st.markdown(
@@ -2264,7 +2281,7 @@ if sayfa == "1-1 Görüşme Kayıt":
         )
 
     st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-    d_col1, d_col2, d_col3 = st.columns([1, 1, 2])
+    d_col1, d_col2 = st.columns([1.2, 1.2])
     with d_col1:
         duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
         duygu_durumu = st.selectbox(
@@ -2273,19 +2290,23 @@ if sayfa == "1-1 Görüşme Kayıt":
             index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
         )
     with d_col2:
+        has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
+        default_aks_choice = "Evet" if (str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
         aksiyon_opts = ["Hayır", "Evet"]
         aksiyon_ihtiyaci = st.selectbox(
-            "Aksiyon Planı Var mı?",
+            "Aksiyon İhtiyacı Var mı?",
             aksiyon_opts,
-            index=_pick_idx(aksiyon_opts, str(prefill.get("aksiyon_ihtiyaci", "Hayır")), 0),
+            index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
         )
-    with d_col3:
-        aksiyon_notu = st.text_area(
-            "Aksiyon Planı Detayı",
-            value=str(prefill.get("aksiyon_notu", "")),
-            height=68,
-            placeholder="Örn: Çalışan iş tatmini konusunda sorun yaşadığını, ekip değişikliği talebi olduğunu paylaşmıştır. Yöneticisi ile görüşülerek toplantı organize edilecek.",
-        )
+
+    st.markdown("##### 📝 Aksiyon Planı")
+    aksiyon_notu = st.text_area(
+        "Aksiyon Planı",
+        value=str(prefill.get("aksiyon_notu", "") or ""),
+        height=82,
+        placeholder="Örn: Çalışanın kaydına; ekip değişikliği talebi bulunmakta, yönetici ile görüşme organize edilecek.",
+        key=f"inp_aksiyon_plani_{edit_kayit_id or 'new'}_{sicil_input}",
+    )
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "💬 15 Görüşme Sorusu",
@@ -2358,6 +2379,10 @@ if sayfa == "1-1 Görüşme Kayıt":
         final_ad = ad_soyad_input.strip() or (emp_info["ad_soyad"] if emp_info else "Anonim")
         g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
         ise_giris_formatted = _format_tr_date_input(ise_giris_str)
+        clean_note = aksiyon_notu.strip()
+        has_note = _has_meaningful_action_note(clean_note)
+        final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+
         new_record = {
             "kayit_id": final_kayit_id,
             "sicil_no": sicil_input or final_kayit_id,
@@ -2378,9 +2403,9 @@ if sayfa == "1-1 Görüşme Kayıt":
             "calisma_modeli": calisma_modeli,
             "duygu_durumu": duygu_durumu,
             "ana_tema": "Güven ve Kültür",
-            "aksiyon_ihtiyaci": "Evet" if (aksiyon_ihtiyaci == "Evet" or aksiyon_notu.strip()) else "Hayır",
-            "aksiyon_seviyesi": "Birim / YM" if (aksiyon_ihtiyaci == "Evet" or aksiyon_notu.strip()) else "Yok",
-            "aksiyon_notu": aksiyon_notu.strip(),
+            "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
+            "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
+            "aksiyon_notu": clean_note if has_note else "",
             "q_kapanis": q_kapanis.strip(),
             **{k: v.strip() for k, v in q_answers.items()},
             **{k: v.strip() for k, v in ik_answers.items()},
@@ -2555,6 +2580,43 @@ elif sayfa == "Standart Dashboard & Sunum":
             )
             fig_aks.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, showlegend=False, height=270, margin=dict(l=10, r=10, t=20, b=20))
             st.plotly_chart(fig_aks, use_container_width=True)
+
+        # Dashboard alanında Aksiyon Planı notlarının açıkça listelendiği bölüm
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.subheader("📋 Aksiyon Planı")
+        aksiyon_not_kayitlari = []
+        for _, r_aks in df_view.iterrows():
+            not_txt = str(r_aks.get("aksiyon_notu", "") or "").strip()
+            if _has_meaningful_action_note(not_txt):
+                kisi_ad = str(r_aks.get("ad_soyad", "") or r_aks.get("calisan_rumuzu", "") or "Katılımcı").strip()
+                sic_no = str(r_aks.get("sicil_no", "") or "").strip()
+                birim_ad = str(r_aks.get("birim", "") or "").strip()
+                gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
+                aksiyon_not_kayitlari.append(
+                    {
+                        "kisi": f"{kisi_ad} ({sic_no})" if sic_no else kisi_ad,
+                        "birim": birim_ad,
+                        "tarih": gt_txt,
+                        "not": not_txt,
+                    }
+                )
+
+        if aksiyon_not_kayitlari:
+            st.caption(f"Seçili filtrede aksiyon planı notu bulunan **{len(aksiyon_not_kayitlari)}** kayıt listeleniyor.")
+            for item_aks in aksiyon_not_kayitlari:
+                meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
+                meta_str = " • ".join(meta_parcalar)
+                st.markdown(
+                    f"""
+                    <div class="action-note-box">
+                        <div style="font-size:0.8rem; color:{PURPLE_LIGHT}; font-weight:700; margin-bottom:0.25rem;">{meta_str}</div>
+                        <div style="color:{TEXT_LIGHT}; font-size:0.95rem; line-height:1.45;">{item_aks['not']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.info("Seçili filtre kapsamında girilmiş aksiyon planı notu bulunmuyor.")
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📈 İzlenim Paylaşım Puanlaması — 2025 vs 2026 Karşılaştırması")
