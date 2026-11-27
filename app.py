@@ -729,7 +729,7 @@ IK_IS_ORTAGI_OPTIONS = [
 
 DEFAULT_USERS = {
     "seyma": {
-        "ad_soyad": "Şeyma (İK İş Ortağı)",
+        "ad_soyad": "Şeyma Oruç",
         "sifre": "panel2026",
         "rol": "hrbp",
         "gmy_birimler": GMY_BIRIM_MAP,
@@ -2325,7 +2325,7 @@ emp_directory = get_employee_directory(df_all)
 
 with st.sidebar:
     st.markdown(f"### 👤 {user['ad_soyad']}")
-    st.caption(f"Bağlantı: {data_source_label}")
+    st.caption(data_source_label)
     if st.button("Çıkış Yap", use_container_width=True):
         st.session_state.user = None
         st.rerun()
