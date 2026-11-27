@@ -2400,6 +2400,13 @@ if sayfa == "1-1 Görüşme Kayıt":
             return opts.index(val)
         return fallback
 
+    donem_opts = [
+        "2026 - 1. Dönem",
+        "2026 - 2. Dönem",
+        "2027 - 1. Dönem",
+        "2027 - 2. Dönem",
+    ]
+
     s_col1, s_col2, s_col3, s_col4 = st.columns(4)
     default_sicil = str(edit_record_row.get("sicil_no", "")) if edit_record_row else ""
     with s_col1:
@@ -2412,14 +2419,6 @@ if sayfa == "1-1 Görüşme Kayıt":
 
     emp_info_pre = emp_directory.get(sicil_input) if sicil_input else None
     pre_source = dict(edit_record_row) if edit_record_row else (dict(emp_info_pre) if emp_info_pre else {})
-    donem_opts = [
-        "2026 - 1. Dönem",
-        "2026 - 2. Dönem",
-        "2026 - 1. Çeyrek",
-        "2026 - 2. Çeyrek",
-        "2026 - 3. Çeyrek",
-        "2026 - 4. Çeyrek",
-    ]
 
     with s_col4:
         sec_donem = st.selectbox(
@@ -2428,6 +2427,8 @@ if sayfa == "1-1 Görüşme Kayıt":
             index=_pick_idx(donem_opts, str(pre_source.get("donem", "2026 - 2. Dönem")), 1),
             key="inp_donem",
         )
+
+    has_sicil_and_donem = bool(sicil_input) and bool(str(sec_donem).strip())
 
     existing_sicil_donem_set = set()
     if not df_all.empty and "sicil_no" in df_all.columns:
@@ -2441,308 +2442,311 @@ if sayfa == "1-1 Görüşme Kayıt":
                 continue
             existing_sicil_donem_set.add((s_val, d_val))
 
-    is_duplicate_sicil_donem = bool(sicil_input) and ((sicil_input, str(sec_donem).strip()) in existing_sicil_donem_set)
+    is_duplicate_sicil_donem = has_sicil_and_donem and ((sicil_input, str(sec_donem).strip()) in existing_sicil_donem_set)
 
-    if is_duplicate_sicil_donem:
+    if not has_sicil_and_donem:
+        st.info("Form alanlarını görüntülemek için lütfen **Sicil** ve **Görüşme Dönemi** seçin.")
+    elif is_duplicate_sicil_donem:
         st.error(
             f"**{sicil_input}** sicili için **'{sec_donem}'** döneminde zaten kayıt mevcut! "
             "Aynı dönemde 2. kayıt yapılamaz. Farklı bir dönem seçtiğinizde veya farklı bir sicil girdiğinizde diğer alanlar açılacaktır."
         )
     else:
-        if sicil_input and emp_info_pre:
+        if emp_info_pre:
             st.success(
                 f"**{sicil_input}** ({emp_info_pre['ad_soyad']}) için **'{sec_donem}'** dönemi uygun; bilgileri girebilir veya düzenleyebilirsiniz."
             )
-        elif sicil_input and not emp_info_pre:
+        else:
             st.info(f"**{sicil_input}** sicili ve **'{sec_donem}'** dönemi için yeni kayıt girişi yapabilirsiniz.")
 
-    prefill = dict(pre_source) if not is_duplicate_sicil_donem else {}
-    if sicil_input and not is_duplicate_sicil_donem:
-        prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
+    if has_sicil_and_donem:
+        prefill = dict(pre_source) if not is_duplicate_sicil_donem else {}
+        if not is_duplicate_sicil_donem:
+            prefill["lokasyon"] = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
 
-    with s_col2:
-        ad_soyad_input = st.text_input(
-            "Ad Soyad",
-            value=str(prefill.get("ad_soyad", "")),
-            placeholder="Ad Soyad",
-            disabled=is_duplicate_sicil_donem,
-            key="inp_ad_soyad",
-        )
-    with s_col3:
-        default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=now_local().date())
-        gorusme_tarihi_dt = st.date_input(
-            "Görüşme Tarihi",
-            value=default_gt_date,
-            format="DD.MM.YYYY",
-            disabled=is_duplicate_sicil_donem,
-            key="inp_gorusme_tarihi",
-        )
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        sec_gmy = st.selectbox(
-            "Genel Müdür Yardımcılığı",
-            gmy_options,
-            index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_gmy",
-        )
-    with c2:
-        sec_departman = st.selectbox(
-            "Departman",
-            DEPARTMAN_OPTIONS,
-            index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_departman",
-        )
-    with c3:
-        birim_options = assigned_gmy_map.get(sec_gmy, GMY_BIRIM_MAP.get(sec_gmy, []))
-        sec_birim = st.selectbox(
-            "Birim",
-            birim_options,
-            index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_birim",
-        )
-    with c4:
-        sec_bolum = st.selectbox(
-            "Bölüm",
-            BOLUM_OPTIONS,
-            index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_bolum",
-        )
-
-    c5, c6, c7, c8 = st.columns(4)
-    with c5:
-        yon_val_init = str(prefill.get("yonetici_bilgisi", "") or "")
-        yon_extra = [yon_val_init] if (yon_val_init and yon_val_init not in YONETICI_OPTIONS) else []
-        yon_opts = YONETICI_OPTIONS + yon_extra
-        sec_yonetici = st.selectbox(
-            "Yönetici Bilgisi",
-            yon_opts,
-            index=_pick_idx(yon_opts, yon_val_init, 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_yonetici",
-        )
-    with c6:
-        ise_giris_str = st.text_input(
-            "İşe Giriş Tarihi",
-            value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
-            placeholder="GG.AA.YYYY",
-            disabled=is_duplicate_sicil_donem,
-            key="inp_ise_giris",
-        )
-    with c7:
-        sec_ik_ortagi = st.selectbox(
-            "İK İş Ortağı",
-            IK_IS_ORTAGI_OPTIONS,
-            index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_ik_ortagi",
-        )
-    with c8:
-        loc_val_clean = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
-        sec_lokasyon = st.selectbox(
-            "Lokasyon",
-            LOKASYON_OPTIONS,
-            index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_lokasyon",
-        )
-
-    st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
-    pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
-    d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
-    with d_col1:
-        duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
-        duygu_durumu = st.selectbox(
-            "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
-            duygu_opts,
-            index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_duygu",
-        )
-    with d_col2:
-        has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
-        default_aks_choice = "Evet" if (pdf_aks_detay is not None or str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
-        aksiyon_opts = ["Hayır", "Evet"]
-        aksiyon_ihtiyaci = st.selectbox(
-            "Aksiyon planı gerekli mi?",
-            aksiyon_opts,
-            index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_aksiyon_ihtiyac",
-        )
-    with d_col3:
-        model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
-        calisma_modeli = st.selectbox(
-            "Çalışma Modeli",
-            model_opts,
-            index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
-            disabled=is_duplicate_sicil_donem,
-            key="inp_calisma_modeli",
-        )
-
-    st.markdown("##### 📝 Aksiyon Planı / Detay")
-    default_aks_note = str(prefill.get("aksiyon_notu", "") or "").strip() or (pdf_aks_detay or "")
-    aksiyon_notu = st.text_area(
-        "Aksiyon Planı / Detay",
-        value=default_aks_note,
-        height=82,
-        placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
-        disabled=is_duplicate_sicil_donem,
-        key="inp_aksiyon_plani",
-    )
-
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "💬 15 Görüşme Sorusu",
-        "🏢 İnsan Kaynakları & Kapanış",
-        "⭐ 1-5 Puanlama (Bar + Manuel Giriş)",
-        "📥 Excel'den Veri İçe Aktar",
-    ])
-
-    q_answers = {}
-    ik_answers = {}
-    p_scores = {}
-
-    with tab1:
-        for q_key, q_text in GORUSME_SORULARI:
-            q_answers[q_key] = st.text_area(
-                q_text,
-                value=str(prefill.get(q_key, "") or ""),
-                height=70,
+        with s_col2:
+            ad_soyad_input = st.text_input(
+                "Ad Soyad",
+                value=str(prefill.get("ad_soyad", "")),
+                placeholder="Ad Soyad",
                 disabled=is_duplicate_sicil_donem,
-                key=f"inp_{q_key}",
+                key="inp_ad_soyad",
             )
-
-    with tab2:
-        for ik_key, ik_label in IK_BASLIKLARI:
-            ik_answers[ik_key] = st.text_area(
-                f"İK Başlığı — {ik_label}",
-                value=str(prefill.get(ik_key, "") or ""),
-                height=70,
+        with s_col3:
+            default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=now_local().date())
+            gorusme_tarihi_dt = st.date_input(
+                "Görüşme Tarihi",
+                value=default_gt_date,
+                format="DD.MM.YYYY",
                 disabled=is_duplicate_sicil_donem,
-                key=f"inp_{ik_key}",
+                key="inp_gorusme_tarihi",
             )
-        q_kapanis = st.text_area(
-            "Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?",
-            value=str(prefill.get("q_kapanis", "") or ""),
-            height=80,
+
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            sec_gmy = st.selectbox(
+                "Genel Müdür Yardımcılığı",
+                gmy_options,
+                index=_pick_idx(gmy_options, str(prefill.get("gmy", "")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_gmy",
+            )
+        with c2:
+            sec_departman = st.selectbox(
+                "Departman",
+                DEPARTMAN_OPTIONS,
+                index=_pick_idx(DEPARTMAN_OPTIONS, str(prefill.get("departman", "")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_departman",
+            )
+        with c3:
+            birim_options = assigned_gmy_map.get(sec_gmy, GMY_BIRIM_MAP.get(sec_gmy, []))
+            sec_birim = st.selectbox(
+                "Birim",
+                birim_options,
+                index=_pick_idx(birim_options, str(prefill.get("birim", "")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_birim",
+            )
+        with c4:
+            sec_bolum = st.selectbox(
+                "Bölüm",
+                BOLUM_OPTIONS,
+                index=_pick_idx(BOLUM_OPTIONS, str(prefill.get("bolum", "")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_bolum",
+            )
+
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            yon_val_init = str(prefill.get("yonetici_bilgisi", "") or "")
+            yon_extra = [yon_val_init] if (yon_val_init and yon_val_init not in YONETICI_OPTIONS) else []
+            yon_opts = YONETICI_OPTIONS + yon_extra
+            sec_yonetici = st.selectbox(
+                "Yönetici Bilgisi",
+                yon_opts,
+                index=_pick_idx(yon_opts, yon_val_init, 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_yonetici",
+            )
+        with c6:
+            ise_giris_str = st.text_input(
+                "İşe Giriş Tarihi",
+                value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
+                placeholder="GG.AA.YYYY",
+                disabled=is_duplicate_sicil_donem,
+                key="inp_ise_giris",
+            )
+        with c7:
+            sec_ik_ortagi = st.selectbox(
+                "İK İş Ortağı",
+                IK_IS_ORTAGI_OPTIONS,
+                index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_ik_ortagi",
+            )
+        with c8:
+            loc_val_clean = _normalize_location_value(prefill.get("lokasyon", ""), sicil_no=sicil_input, fallback_idx=0)
+            sec_lokasyon = st.selectbox(
+                "Lokasyon",
+                LOKASYON_OPTIONS,
+                index=_pick_idx(LOKASYON_OPTIONS, loc_val_clean, 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_lokasyon",
+            )
+
+        st.markdown("#### 🎯 Duygu Durumu & Aksiyon Planı")
+        pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
+        d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
+        with d_col1:
+            duygu_opts = ["Olumlu", "Nötr", "Olumsuz"]
+            duygu_durumu = st.selectbox(
+                "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
+                duygu_opts,
+                index=_pick_idx(duygu_opts, str(prefill.get("duygu_durumu", "Olumlu")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_duygu",
+            )
+        with d_col2:
+            has_existing_note = _has_meaningful_action_note(prefill.get("aksiyon_notu", ""))
+            default_aks_choice = "Evet" if (pdf_aks_detay is not None or str(prefill.get("aksiyon_ihtiyaci", "")) == "Evet" or has_existing_note) else "Hayır"
+            aksiyon_opts = ["Hayır", "Evet"]
+            aksiyon_ihtiyaci = st.selectbox(
+                "Aksiyon planı gerekli mi?",
+                aksiyon_opts,
+                index=_pick_idx(aksiyon_opts, default_aks_choice, 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_aksiyon_ihtiyac",
+            )
+        with d_col3:
+            model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
+            calisma_modeli = st.selectbox(
+                "Çalışma Modeli",
+                model_opts,
+                index=_pick_idx(model_opts, str(prefill.get("calisma_modeli", "Hibrit")), 0),
+                disabled=is_duplicate_sicil_donem,
+                key="inp_calisma_modeli",
+            )
+
+        st.markdown("##### 📝 Aksiyon Planı / Detay")
+        default_aks_note = str(prefill.get("aksiyon_notu", "") or "").strip() or (pdf_aks_detay or "")
+        aksiyon_notu = st.text_area(
+            "Aksiyon Planı / Detay",
+            value=default_aks_note,
+            height=82,
+            placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
             disabled=is_duplicate_sicil_donem,
-            key="inp_q_kapanis",
+            key="inp_aksiyon_plani",
         )
 
-    with tab3:
-        st.caption(
-            "Puanı aşağıdaki bardan seçebilir veya sağdaki alana manuel (1.0 - 5.0 arası, 0.5 adımlı) girebilirsiniz; "
-            "manuel puan girildiğinde bar otomatik olarak güncellenir."
-        )
-        for p_key, p_label in PUAN_BASLIKLARI:
-            default_p = _snap_half_step(prefill.get(p_key, None))
-            p_scores[p_key] = render_synced_score_row(p_key, p_label, default_p, "main")
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "💬 15 Görüşme Sorusu",
+            "🏢 İnsan Kaynakları & Kapanış",
+            "⭐ 1-5 Puanlama (Bar + Manuel Giriş)",
+            "📥 Excel'den Veri İçe Aktar",
+        ])
 
-    with tab4:
-        st.markdown("Excel'de tutulan mevcut görüşme kayıtlarını tek seferde havuza aktarabilirsiniz.")
-        tmpl_bytes = build_excel_template()
-        st.download_button(
-            label="📄 Örnek Excel İçe Aktarma Şablonunu İndir (.xlsx)",
-            data=tmpl_bytes,
-            file_name="Izlenim_Paylasim_Import_Sablonu.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-        uploaded_xlsx = st.file_uploader("Doldurulmuş Excel Dosyasını Seçin (.xlsx)", type=["xlsx"])
-        if uploaded_xlsx is not None:
-            if st.button("Excel Verilerini Havuza Aktar", type="primary"):
-                cnt_imp, msg_imp = import_excel_records(uploaded_xlsx)
-                if cnt_imp > 0:
-                    st.success(msg_imp)
-                    st.rerun()
-                else:
-                    st.error(msg_imp)
+        q_answers = {}
+        ik_answers = {}
+        p_scores = {}
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
-    if st.button(btn_label, type="primary", use_container_width=True, disabled=is_duplicate_sicil_donem):
-        clean_sicil = sicil_input.strip()
-        clean_donem = str(sec_donem).strip()
-        clean_ad_girilen = ad_soyad_input.strip()
-        clean_note = aksiyon_notu.strip()
-        has_note = _has_meaningful_action_note(clean_note)
-        clean_kapanis = q_kapanis.strip()
-        clean_q_vals = [v.strip() for v in q_answers.values() if v and v.strip()]
-        clean_ik_vals = [v.strip() for v in ik_answers.values() if v and v.strip()]
-        has_any_score = any(v is not None for v in p_scores.values())
-        has_any_content = bool(
-            clean_sicil
-            or clean_ad_girilen
-            or has_note
-            or clean_kapanis
-            or clean_q_vals
-            or clean_ik_vals
-            or has_any_score
-        )
+        with tab1:
+            for q_key, q_text in GORUSME_SORULARI:
+                q_answers[q_key] = st.text_area(
+                    q_text,
+                    value=str(prefill.get(q_key, "") or ""),
+                    height=70,
+                    disabled=is_duplicate_sicil_donem,
+                    key=f"inp_{q_key}",
+                )
 
-        if clean_sicil and (clean_sicil, clean_donem) in existing_sicil_donem_set:
-            st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
-        elif not edit_kayit_id and not has_any_content:
-            st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
-        else:
-            now_tr = now_local()
-            final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
-            emp_matched = emp_directory.get(clean_sicil) if clean_sicil else None
-            final_ad = clean_ad_girilen or (emp_matched["ad_soyad"] if emp_matched else "Anonim")
-            g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
-            kayit_zamani_formatted = (
-                str(edit_record_row.get("kayit_zamani", "") or "").strip()
-                if edit_kayit_id and edit_record_row
-                else now_tr.strftime("%d.%m.%Y %H:%M")
+        with tab2:
+            for ik_key, ik_label in IK_BASLIKLARI:
+                ik_answers[ik_key] = st.text_area(
+                    f"İK Başlığı — {ik_label}",
+                    value=str(prefill.get(ik_key, "") or ""),
+                    height=70,
+                    disabled=is_duplicate_sicil_donem,
+                    key=f"inp_{ik_key}",
+                )
+            q_kapanis = st.text_area(
+                "Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?",
+                value=str(prefill.get("q_kapanis", "") or ""),
+                height=80,
+                disabled=is_duplicate_sicil_donem,
+                key="inp_q_kapanis",
             )
-            ise_giris_formatted = _format_tr_date_input(ise_giris_str)
-            final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
 
-            existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
-            existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
-            existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
-            keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
+        with tab3:
+            st.caption(
+                "Puanı aşağıdaki bardan seçebilir veya sağdaki alana manuel (1.0 - 5.0 arası, 0.5 adımlı) girebilirsiniz; "
+                "manuel puan girildiğinde bar otomatik olarak güncellenir."
+            )
+            for p_key, p_label in PUAN_BASLIKLARI:
+                default_p = _snap_half_step(prefill.get(p_key, None))
+                p_scores[p_key] = render_synced_score_row(p_key, p_label, default_p, "main")
 
-            new_record = {
-                "kayit_id": final_kayit_id,
-                "sicil_no": clean_sicil or final_kayit_id,
-                "ad_soyad": final_ad,
-                "gorusme_tarihi": g_tarih_formatted,
-                "kayit_zamani": kayit_zamani_formatted,
-                "donem": clean_donem,
-                "hrbp_kullanici": user["username"],
-                "ik_is_ortagi": sec_ik_ortagi,
-                "gmy": sec_gmy,
-                "departman": sec_departman,
-                "birim": sec_birim,
-                "bolum": sec_bolum,
-                "yonetici_bilgisi": sec_yonetici,
-                "lokasyon": sec_lokasyon,
-                "ise_giris_tarihi": ise_giris_formatted,
-                "katilimci_turu": "Katılımcı",
-                "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
-                "calisma_modeli": calisma_modeli,
-                "duygu_durumu": duygu_durumu,
-                "ana_tema": "Güven ve Kültür",
-                "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
-                "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
-                "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
-                "aksiyon_tamamlandi": keep_done,
-                "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
-                "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
-                "q_kapanis": clean_kapanis,
-                **{k: v.strip() for k, v in q_answers.items()},
-                **{k: v.strip() for k, v in ik_answers.items()},
-                **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
-            }
-            ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
-            if ok:
-                st.success(msg)
+        with tab4:
+            st.markdown("Excel'de tutulan mevcut görüşme kayıtlarını tek seferde havuza aktarabilirsiniz.")
+            tmpl_bytes = build_excel_template()
+            st.download_button(
+                label="📄 Örnek Excel İçe Aktarma Şablonunu İndir (.xlsx)",
+                data=tmpl_bytes,
+                file_name="Izlenim_Paylasim_Import_Sablonu.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            uploaded_xlsx = st.file_uploader("Doldurulmuş Excel Dosyasını Seçin (.xlsx)", type=["xlsx"])
+            if uploaded_xlsx is not None:
+                if st.button("Excel Verilerini Havuza Aktar", type="primary"):
+                    cnt_imp, msg_imp = import_excel_records(uploaded_xlsx)
+                    if cnt_imp > 0:
+                        st.success(msg_imp)
+                        st.rerun()
+                    else:
+                        st.error(msg_imp)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        btn_label = "💾 Değişiklikleri Güncelle" if edit_kayit_id else "💾 Görüşme Kaydını Kaydet"
+        if st.button(btn_label, type="primary", use_container_width=True, disabled=is_duplicate_sicil_donem):
+            clean_sicil = sicil_input.strip()
+            clean_donem = str(sec_donem).strip()
+            clean_ad_girilen = ad_soyad_input.strip()
+            clean_note = aksiyon_notu.strip()
+            has_note = _has_meaningful_action_note(clean_note)
+            clean_kapanis = q_kapanis.strip()
+            clean_q_vals = [v.strip() for v in q_answers.values() if v and v.strip()]
+            clean_ik_vals = [v.strip() for v in ik_answers.values() if v and v.strip()]
+            has_any_score = any(v is not None for v in p_scores.values())
+            has_any_content = bool(
+                clean_sicil
+                or clean_ad_girilen
+                or has_note
+                or clean_kapanis
+                or clean_q_vals
+                or clean_ik_vals
+                or has_any_score
+            )
+
+            if clean_sicil and (clean_sicil, clean_donem) in existing_sicil_donem_set:
+                st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
+            elif not edit_kayit_id and not has_any_content:
+                st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
             else:
-                st.error(msg)
+                now_tr = now_local()
+                final_kayit_id = edit_kayit_id if edit_kayit_id else now_tr.strftime("%Y%m%d-%H%M%S")
+                emp_matched = emp_directory.get(clean_sicil) if clean_sicil else None
+                final_ad = clean_ad_girilen or (emp_matched["ad_soyad"] if emp_matched else "Anonim")
+                g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
+                kayit_zamani_formatted = (
+                    str(edit_record_row.get("kayit_zamani", "") or "").strip()
+                    if edit_kayit_id and edit_record_row
+                    else now_tr.strftime("%d.%m.%Y %H:%M")
+                )
+                ise_giris_formatted = _format_tr_date_input(ise_giris_str)
+                final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
+
+                existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
+                existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
+                existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
+                keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
+
+                new_record = {
+                    "kayit_id": final_kayit_id,
+                    "sicil_no": clean_sicil or final_kayit_id,
+                    "ad_soyad": final_ad,
+                    "gorusme_tarihi": g_tarih_formatted,
+                    "kayit_zamani": kayit_zamani_formatted,
+                    "donem": clean_donem,
+                    "hrbp_kullanici": user["username"],
+                    "ik_is_ortagi": sec_ik_ortagi,
+                    "gmy": sec_gmy,
+                    "departman": sec_departman,
+                    "birim": sec_birim,
+                    "bolum": sec_bolum,
+                    "yonetici_bilgisi": sec_yonetici,
+                    "lokasyon": sec_lokasyon,
+                    "ise_giris_tarihi": ise_giris_formatted,
+                    "katilimci_turu": "Katılımcı",
+                    "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
+                    "calisma_modeli": calisma_modeli,
+                    "duygu_durumu": duygu_durumu,
+                    "ana_tema": "Güven ve Kültür",
+                    "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
+                    "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
+                    "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
+                    "aksiyon_tamamlandi": keep_done,
+                    "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
+                    "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
+                    "q_kapanis": clean_kapanis,
+                    **{k: v.strip() for k, v in q_answers.items()},
+                    **{k: v.strip() for k, v in ik_answers.items()},
+                    **{k: (None if v is None else float(v)) for k, v in p_scores.items()},
+                }
+                ok, msg = save_or_update_record(new_record, edit_kayit_id=edit_kayit_id)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
 
 elif is_presentation_mod:
     allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
