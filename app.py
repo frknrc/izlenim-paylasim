@@ -941,7 +941,7 @@ def _extract_score_from_record(r: dict, p_key: str, p_label: str) -> float | Non
             sc = _snap_half_step(r_v)
             if sc is not None:
                 return sc
-        elif p_key == "p_1_yonetici_iletisimi" and "yonetici" in rk_low and "iletişim" in rk_low or "iletisim" in rk_low:
+        elif p_key == "p_1_yonetici_iletisimi" and "yonetici" in rk_low and ("iletişim" in rk_low or "iletisim" in rk_low):
             sc = _snap_half_step(r_v)
             if sc is not None:
                 return sc
@@ -2555,12 +2555,16 @@ if sayfa == "1-1 Görüşme Kayıt":
     if st.session_state.get("_last_form_context_sig") != context_sig:
         st.session_state["_last_form_context_sig"] = context_sig
         is_edit_ctx = edit_record_row is not None
-        st.session_state["inp_duygu"] = str(pre_source.get("duygu_durumu", "") or "").strip() if is_edit_ctx else ""
+        st.session_state["inp_duygu"] = (
+            str(pre_source.get("duygu_durumu", "") or "").strip() if is_edit_ctx else "Seçiniz"
+        )
         raw_aks_ctx = str(pre_source.get("aksiyon_ihtiyaci", "") or "").strip()
         st.session_state["inp_aksiyon_ihtiyac"] = (
-            raw_aks_ctx if (is_edit_ctx and raw_aks_ctx in ("Evet", "Hayır")) else ""
+            raw_aks_ctx if (is_edit_ctx and raw_aks_ctx in ("Evet", "Hayır")) else "Seçiniz"
         )
-        st.session_state["inp_calisma_modeli"] = str(pre_source.get("calisma_modeli", "") or "").strip() if is_edit_ctx else ""
+        st.session_state["inp_calisma_modeli"] = (
+            str(pre_source.get("calisma_modeli", "") or "").strip() if is_edit_ctx else "Seçiniz"
+        )
 
     if not has_sicil_and_donem:
         st.info("Form alanlarını görüntülemek için lütfen **Sicil** ve **Görüşme Dönemi** seçin.")
@@ -2677,7 +2681,7 @@ if sayfa == "1-1 Görüşme Kayıt":
         pdf_aks_detay = AKSIYON_PLANI_MAP.get(sicil_input) if (sicil_input and not is_duplicate_sicil_donem) else None
         d_col1, d_col2, d_col3 = st.columns([1.0, 1.0, 1.2])
         with d_col1:
-            duygu_opts = ["", "Olumlu", "Nötr", "Olumsuz"]
+            duygu_opts = ["Seçiniz", "Olumlu", "Nötr", "Olumsuz"]
             duygu_durumu = st.selectbox(
                 "Duygu Durumu (Olumlu, Nötr, Olumsuz)",
                 duygu_opts,
@@ -2685,7 +2689,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 key="inp_duygu",
             )
         with d_col2:
-            aksiyon_opts = ["", "Hayır", "Evet"]
+            aksiyon_opts = ["Seçiniz", "Hayır", "Evet"]
             aksiyon_ihtiyaci = st.selectbox(
                 "Aksiyon planı gerekli mi?",
                 aksiyon_opts,
@@ -2693,7 +2697,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 key="inp_aksiyon_ihtiyac",
             )
         with d_col3:
-            model_opts = ["", "Hibrit", "Uzaktan", "Ofis / Saha"]
+            model_opts = ["Seçiniz", "Hibrit", "Uzaktan", "Ofis / Saha"]
             calisma_modeli = st.selectbox(
                 "Çalışma Modeli",
                 model_opts,
@@ -2802,7 +2806,14 @@ if sayfa == "1-1 Görüşme Kayıt":
 
             if clean_sicil and (clean_sicil, clean_donem) in existing_sicil_donem_set:
                 st.error(f"**{clean_sicil}** sicili için **'{clean_donem}'** döneminde zaten kayıt mevcut; aynı dönemde 2. kayıt yapılamaz.")
-            elif not duygu_durumu or not aksiyon_ihtiyaci or not calisma_modeli:
+            elif (
+                not duygu_durumu
+                or duygu_durumu == "Seçiniz"
+                or not aksiyon_ihtiyaci
+                or aksiyon_ihtiyaci == "Seçiniz"
+                or not calisma_modeli
+                or calisma_modeli == "Seçiniz"
+            ):
                 st.error("Lütfen **Duygu Durumu**, **Aksiyon planı gerekli mi?** ve **Çalışma Modeli** alanlarının tamamını seçin.")
             elif not edit_kayit_id and not has_any_content:
                 st.error("Hiçbir görüşme verisi girilmedi. Kayıt oluşturmak için en az Sicil/Ad Soyad, görüşme yanıtı, not veya puan girin.")
