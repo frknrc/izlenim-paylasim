@@ -270,7 +270,7 @@ st.markdown(
             box-shadow: 0 8px 24px rgba(139, 92, 246, 0.14);
             border-radius: 12px;
             padding: 0.95rem 1.2rem;
-            margin-bottom: 0.85rem;
+            margin-bottom: 0.75rem;
         }}
         .action-note-box {{
             background: linear-gradient(120deg, #161F33 0%, #191936 100%);
@@ -282,13 +282,12 @@ st.markdown(
             box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
         }}
         .action-note-box-done {{
-            background: linear-gradient(120deg, #102424 0%, #151E30 100%);
-            border: 1px solid rgba(16, 185, 129, 0.45);
+            background: linear-gradient(120deg, #0E2623 0%, #141E32 100%);
+            border: 1px solid rgba(16, 185, 129, 0.55);
             border-left: 5px solid {POS_COLOR};
             border-radius: 10px;
-            padding: 0.9rem 1.15rem;
+            padding: 0.95rem 1.15rem;
             margin-bottom: 0.7rem;
-            opacity: 0.92;
         }}
         .criteria-card {{
             background-color: {CARD_DARK};
@@ -346,7 +345,7 @@ def _is_completed_flag(val: object) -> bool:
         return val
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return False
-    return str(val).strip().lower() in {"true", "1", "evet", "yes", "tamamlandi", "tamamlandı", "done"}
+    return str(val).strip().lower() in {"true", "1", "evet", "yes", "tamamlandi", "tamamlandı", "done", "kapalı", "kapali"}
 
 
 def _has_completion_note(note_val: object) -> bool:
@@ -798,8 +797,8 @@ COLUMN_LABELS = {
     "aksiyon_seviyesi": "Aksiyon Seviyesi",
     "aksiyon_notu": "Aksiyon Planı / Detay",
     "aksiyon_tamamlandi": "Aksiyon Tamamlandı",
-    "aksiyon_tamamlanma_tarihi": "Aksiyon Tamamlanma Tarihi",
-    "aksiyon_tamamlanma_notu": "Aksiyon Nasıl Tamamlandı (Not)",
+    "aksiyon_tamamlanma_tarihi": "Aksiyon Kapatılma Tarihi",
+    "aksiyon_tamamlanma_notu": "Aksiyon Kapatma Yorumu / Notu",
     "q_kapanis": "Kapanış / Ek Not",
     **dict(GORUSME_SORULARI),
     **dict(IK_BASLIKLARI),
@@ -1394,7 +1393,6 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
 
         q10_txt = _clean(r.get("q10_degistirmek_istenen") or r.get("st'te neyi değiştirmek isterdin?"))
 
-        # PDF'ten gelen aksiyon planlaması verisi öncelikli uygulanır; yoksa kayıtlı alan kontrol edilir
         pdf_detay = AKSIYON_PLANI_MAP.get(sicil_val)
         aksiyon_var_raw = _clean(
             r.get("aksiyon_ihtiyaci")
@@ -1420,10 +1418,14 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
             aksiyon_not_final = ""
 
         tamamlanma_not_val = _clean(
-            r.get("aksiyon_tamamlanma_notu") or r.get("Aksiyon Nasıl Tamamlandı (Not)")
+            r.get("aksiyon_tamamlanma_notu")
+            or r.get("Aksiyon Kapatma Yorumu / Notu")
+            or r.get("Aksiyon Nasıl Tamamlandı (Not)")
         )
         tamamlanma_tarih_val = _format_tr_date_input(
-            r.get("aksiyon_tamamlanma_tarihi") or r.get("Aksiyon Tamamlanma Tarihi")
+            r.get("aksiyon_tamamlanma_tarihi")
+            or r.get("Aksiyon Kapatılma Tarihi")
+            or r.get("Aksiyon Tamamlanma Tarihi")
         )
         tamamlandi_raw = r.get("aksiyon_tamamlandi") if "aksiyon_tamamlandi" in r else r.get("Aksiyon Tamamlandı")
         aksiyon_tamamlandi = (
@@ -1576,7 +1578,7 @@ def update_action_completion_record(
     clean_date = _format_tr_date_input(completion_date) if completed else ""
 
     if completed and not _has_completion_note(clean_note):
-        return False, "Aksiyonu tamamlandı olarak işaretlemek için nasıl tamamlandığına dair not girilmelidir."
+        return False, "Aksiyonu kapatmak için nasıl tamamlandığına dair not girilmelidir."
 
     df_curr = st.session_state.local_df.copy()
     matched = False
@@ -1620,7 +1622,7 @@ def update_action_completion_record(
         except Exception:
             pass
 
-    return True, "Aksiyon tamamlanma bilgisi kaydedildi."
+    return True, "Aksiyon kapatma bilgisi kaydedildi."
 
 
 def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tuple[bool, str]:
@@ -1684,8 +1686,8 @@ def build_excel_template() -> bytes:
         "Aksiyon planı gerekli mi?",
         "Aksiyon Planı / Detay",
         "Aksiyon Tamamlandı",
-        "Aksiyon Tamamlanma Tarihi",
-        "Aksiyon Nasıl Tamamlandı (Not)",
+        "Aksiyon Kapatılma Tarihi",
+        "Aksiyon Kapatma Yorumu / Notu",
     ] + [q_lbl for _, q_lbl in TUM_METIN_SORULARI] + [p_lbl for _, p_lbl in PUAN_BASLIKLARI]
 
     sample_row = {
@@ -1706,8 +1708,8 @@ def build_excel_template() -> bytes:
         "Aksiyon planı gerekli mi?": "Evet",
         "Aksiyon Planı / Detay": "Ekip değişikliği talebi bulunmakta, toplantı",
         "Aksiyon Tamamlandı": "Hayır",
-        "Aksiyon Tamamlanma Tarihi": "",
-        "Aksiyon Nasıl Tamamlandı (Not)": "",
+        "Aksiyon Kapatılma Tarihi": "",
+        "Aksiyon Kapatma Yorumu / Notu": "",
         "Genel Memnuniyet": 4.5,
         "Ekip Motivasyonu": 4.0,
     }
@@ -1784,11 +1786,11 @@ def build_excel_export(df_raw: pd.DataFrame) -> bytes:
                     "Olumlu Görüşme": olumlu_sayisi,
                     "Olumsuz Görüşme": olumsuz_sayisi,
                     "Aksiyon İhtiyacı Olan": aksiyon_sayisi,
-                    "Tamamlanan Aksiyon": tamamlanan_sayisi,
+                    "Kapatılan Aksiyon": tamamlanan_sayisi,
                 }
             )
     df_birim_ozet = pd.DataFrame(ozet_rows) if ozet_rows else pd.DataFrame(
-        columns=["Genel Müdür Yardımcılığı", "Birim", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan", "Tamamlanan Aksiyon"]
+        columns=["Genel Müdür Yardımcılığı", "Birim", "Görüşme Sayısı", "Genel Puan Ortalaması (1-5)", "Olumlu Görüşme", "Olumsuz Görüşme", "Aksiyon İhtiyacı Olan", "Kapatılan Aksiyon"]
     )
 
     kriter_rows = []
@@ -2115,9 +2117,9 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
         done_note = str(r.get("aksiyon_tamamlanma_notu", "") or "").strip()
         done_dt = str(r.get("aksiyon_tamamlanma_tarihi", "") or "").strip()
         done_tag = (
-            f"[Tamamlandı{f' - {done_dt}' if done_dt else ''}: {done_note}] "
+            f"[Kapatıldı{f' - {done_dt}' if done_dt else ''} | Yorum: {done_note}] "
             if (is_done and done_note)
-            else ("[Tamamlandı] " if is_done else "")
+            else ("[Açık] " if not is_done else "")
         )
         aksiyon_satirlari.append(f"{done_tag}[{bir} | {kisi}] {not_metni}")
 
@@ -2567,12 +2569,40 @@ elif is_presentation_mod:
         if not df_view.empty and puan_cols and not df_view[puan_cols].apply(pd.to_numeric, errors="coerce").stack().empty
         else 0.0
     )
-    aksiyon_adet = int((df_view["aksiyon_ihtiyaci"] == "Evet").sum()) if "aksiyon_ihtiyaci" in df_view.columns and not df_view.empty else 0
-    tamamlanan_adet = (
-        int(df_view["aksiyon_tamamlandi"].apply(_is_completed_flag).sum())
-        if "aksiyon_tamamlandi" in df_view.columns and not df_view.empty
-        else 0
-    )
+
+    aksiyon_not_kayitlari = []
+    if not df_view.empty:
+        for idx_aks, r_aks in df_view.iterrows():
+            if str(r_aks.get("aksiyon_ihtiyaci", "")).strip() != "Evet":
+                continue
+            sic_no = str(r_aks.get("sicil_no", "") or "").strip()
+            not_txt = str(r_aks.get("aksiyon_notu", "") or "").strip() or AKSIYON_PLANI_MAP.get(sic_no, "")
+            if _has_meaningful_action_note(not_txt):
+                kisi_ad = str(r_aks.get("ad_soyad", "") or r_aks.get("calisan_rumuzu", "") or "Katılımcı").strip()
+                birim_ad = str(r_aks.get("birim", "") or "").strip()
+                gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
+                kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
+                done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
+                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or date.today().strftime("%d.%m.%Y")
+                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
+                aksiyon_not_kayitlari.append(
+                    {
+                        "kayit_id": kid_str,
+                        "sicil_no": sic_no,
+                        "kisi": f"{kisi_ad} ({sic_no})" if sic_no else kisi_ad,
+                        "birim": birim_ad,
+                        "tarih": gt_txt,
+                        "not": not_txt,
+                        "tamamlandi": is_done,
+                        "tamamlanma_tarihi": done_dt_str,
+                        "tamamlanma_notu": done_not_str,
+                    }
+                )
+
+    toplam_aksiyon_adet = len(aksiyon_not_kayitlari)
+    kapali_aksiyon_adet = sum(1 for x in aksiyon_not_kayitlari if x["tamamlandi"])
+    acik_aksiyon_adet = max(0, toplam_aksiyon_adet - kapali_aksiyon_adet)
+
     olumsuz_adet = int((df_view["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
     olumlu_adet = int((df_view["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
     notr_adet = max(0, len(df_view) - olumlu_adet - olumsuz_adet)
@@ -2581,7 +2611,7 @@ elif is_presentation_mod:
     for col_box, lbl, val, sub in [
         (k1, "Toplam Görüşülen Kişi", str(len(df_view)), "Seçili filtre kapsamı"),
         (k2, "Genel Puan Ortalaması", f"{genel_ort} / 5.00", "Buçuklu puanlar dahil"),
-        (k3, "Aksiyon Planlama Sayısı", f"{aksiyon_adet} / {len(df_view)}", f"Tamamlanan: {tamamlanan_adet} aksiyon"),
+        (k3, "Toplam Oluşan Aksiyon", str(toplam_aksiyon_adet), f"Açık: {acik_aksiyon_adet} • Kapalı: {kapali_aksiyon_adet}"),
         (k4, "Duygu Dağılımı (Olumlu / Nötr)", f"{olumlu_adet} / {notr_adet}", olumsuz_sub),
     ]:
         col_box.markdown(
@@ -2641,69 +2671,35 @@ elif is_presentation_mod:
     if df_view.empty:
         st.info("Seçili filtrelere uygun görüşme kaydı bulunamadı.")
     else:
-        ch_left, ch_right = st.columns(2)
-        with ch_left:
-            st.subheader("Duygu Durumu Dağılımı")
-            df_duy = df_view["duygu_durumu"].value_counts().reset_index()
-            df_duy.columns = ["Duygu", "Adet"]
-            fig_duy = px.pie(
-                df_duy,
-                names="Duygu",
-                values="Adet",
-                hole=0.55,
-                color="Duygu",
-                color_discrete_map={"Olumlu": POS_COLOR, "Nötr": NEU_COLOR, "Olumsuz": NEG_COLOR},
-            )
-            fig_duy.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, height=270, margin=dict(l=10, r=10, t=20, b=20))
-            st.plotly_chart(fig_duy, use_container_width=True)
-
-        with ch_right:
-            st.subheader("Aksiyon Planı Durumu (Toplam Görüşme Üzerinden)")
-            df_aks = pd.DataFrame({
-                "Durum": ["Aksiyon Planı Var", "Aksiyon Planı Yok"],
-                "Adet": [aksiyon_adet, max(0, len(df_view) - aksiyon_adet)],
-            })
-            fig_aks = px.bar(
-                df_aks,
-                x="Durum",
-                y="Adet",
-                text="Adet",
-                color="Durum",
-                color_discrete_map={"Aksiyon Planı Var": PURPLE, "Aksiyon Planı Yok": TEAL_SOFT},
-            )
-            fig_aks.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, showlegend=False, height=270, margin=dict(l=10, r=10, t=20, b=20))
-            st.plotly_chart(fig_aks, use_container_width=True)
+        st.subheader(f"Aksiyon Durumu — Açık vs Kapalı Aksiyonlar (Toplam: {toplam_aksiyon_adet})")
+        df_aks_durum = pd.DataFrame({
+            "Aksiyon Durumu": ["Açık Aksiyonlar", "Kapalı Aksiyonlar"],
+            "Adet": [acik_aksiyon_adet, kapali_aksiyon_adet],
+        })
+        fig_aks = px.bar(
+            df_aks_durum,
+            x="Aksiyon Durumu",
+            y="Adet",
+            text="Adet",
+            color="Aksiyon Durumu",
+            color_discrete_map={"Açık Aksiyonlar": PURPLE, "Kapalı Aksiyonlar": POS_COLOR},
+        )
+        fig_aks.update_layout(
+            paper_bgcolor=CARD_DARK,
+            plot_bgcolor=CARD_DARK,
+            font_color=TEXT_LIGHT,
+            showlegend=False,
+            height=275,
+            margin=dict(l=15, r=15, t=20, b=20),
+        )
+        st.plotly_chart(fig_aks, use_container_width=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        aksiyon_not_kayitlari = []
-        for idx_aks, r_aks in df_view.iterrows():
-            if str(r_aks.get("aksiyon_ihtiyaci", "")).strip() != "Evet":
-                continue
-            sic_no = str(r_aks.get("sicil_no", "") or "").strip()
-            not_txt = str(r_aks.get("aksiyon_notu", "") or "").strip() or AKSIYON_PLANI_MAP.get(sic_no, "")
-            if _has_meaningful_action_note(not_txt):
-                kisi_ad = str(r_aks.get("ad_soyad", "") or r_aks.get("calisan_rumuzu", "") or "Katılımcı").strip()
-                birim_ad = str(r_aks.get("birim", "") or "").strip()
-                gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
-                kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
-                done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
-                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or date.today().strftime("%d.%m.%Y")
-                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
-                aksiyon_not_kayitlari.append(
-                    {
-                        "kayit_id": kid_str,
-                        "sicil_no": sic_no,
-                        "kisi": f"{kisi_ad} ({sic_no})" if sic_no else kisi_ad,
-                        "birim": birim_ad,
-                        "tarih": gt_txt,
-                        "not": not_txt,
-                        "tamamlandi": is_done,
-                        "tamamlanma_tarihi": done_dt_str,
-                        "tamamlanma_notu": done_not_str,
-                    }
-                )
+        if "aksiyon_gorunum_modu" not in st.session_state:
+            st.session_state.aksiyon_gorunum_modu = "acik"
 
-        acik_aksiyon_sayisi = sum(1 for x in aksiyon_not_kayitlari if not x["tamamlandi"])
+        acik_liste = [x for x in aksiyon_not_kayitlari if not x["tamamlandi"]]
+        kapali_liste = [x for x in aksiyon_not_kayitlari if x["tamamlandi"]]
 
         st.markdown(
             f"""
@@ -2711,10 +2707,10 @@ elif is_presentation_mod:
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
                     <div>
                         <div style="font-size:1.25rem; font-weight:800; color:#F8FAFC; letter-spacing:-0.2px;">⚡ ÖNE ÇIKAN AKSİYON PLANI</div>
-                        <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Tamamlandı seçildiğinde tamamlanma tarihi ve nasıl tamamlandığına dair not girilmesi zorunludur</div>
+                        <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Aşağıdaki görünümlerden Açık veya Kapatılan Aksiyonları seçerek detayları inceleyebilirsiniz</div>
                     </div>
                     <div style="background:rgba(167,139,250,0.2); border:1px solid rgba(167,139,250,0.6); color:#DDD6FE; font-weight:800; font-size:0.9rem; padding:0.35rem 0.75rem; border-radius:999px;">
-                        {acik_aksiyon_sayisi} Açık / {len(aksiyon_not_kayitlari)} Toplam Aksiyon
+                        {acik_aksiyon_adet} Açık • {kapali_aksiyon_adet} Kapatılan ({toplam_aksiyon_adet} Toplam)
                     </div>
                 </div>
             </div>
@@ -2722,95 +2718,129 @@ elif is_presentation_mod:
             unsafe_allow_html=True,
         )
 
-        if aksiyon_not_kayitlari:
-            for item_aks in aksiyon_not_kayitlari:
-                meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
-                meta_str = " • ".join(meta_parcalar)
-                box_cls = "action-note-box-done" if item_aks["tamamlandi"] else "action-note-box"
-                durum_rozet = (
-                    f'<span style="color:#34D399; font-weight:800; margin-left:0.5rem;">[✓ Tamamlandı • {item_aks["tamamlanma_tarihi"]}]</span>'
-                    if item_aks["tamamlandi"]
-                    else ""
-                )
-                tamamlanma_ozet_html = (
-                    f'<div style="margin-top:0.45rem; padding-top:0.4rem; border-top:1px dashed rgba(52,211,153,0.35); font-size:0.86rem; color:#A7F3D0;">'
-                    f'<b>Tamamlanma Notu:</b> {item_aks["tamamlanma_notu"]}</div>'
-                    if item_aks["tamamlandi"] and item_aks["tamamlanma_notu"]
-                    else ""
-                )
+        btn_col_acik, btn_col_kapali = st.columns(2)
+        with btn_col_acik:
+            acik_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "acik" else ""
+            if st.button(f"📂 Açık Aksiyonlar ({acik_aksiyon_adet}){acik_aktif_tag}", key="btn_show_open_actions", use_container_width=True):
+                st.session_state.aksiyon_gorunum_modu = "acik"
+                st.rerun()
+        with btn_col_kapali:
+            kapali_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "kapali" else ""
+            if st.button(f"✅ Kapatılan Aksiyonlar ({kapali_aksiyon_adet}){kapali_aktif_tag}", key="btn_show_closed_actions", use_container_width=True):
+                st.session_state.aksiyon_gorunum_modu = "kapali"
+                st.rerun()
 
-                uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
-                chk_key = f"aks_done_chk_{uid_tag}"
-                dt_key = f"aks_done_dt_{uid_tag}"
-                nt_key = f"aks_done_nt_{uid_tag}"
-                err_key = f"aks_done_err_{uid_tag}"
+        st.markdown("<br>", unsafe_allow_html=True)
 
-                if chk_key not in st.session_state:
-                    st.session_state[chk_key] = item_aks["tamamlandi"]
-                if dt_key not in st.session_state:
-                    st.session_state[dt_key] = _parse_date_safe(item_aks["tamamlanma_tarihi"], fallback=date.today())
-                if nt_key not in st.session_state:
-                    st.session_state[nt_key] = item_aks["tamamlanma_notu"]
+        if st.session_state.aksiyon_gorunum_modu == "acik":
+            if acik_liste:
+                for item_aks in acik_liste:
+                    meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
+                    meta_str = " • ".join(meta_parcalar)
+                    uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
+                    chk_key = f"aks_done_chk_{uid_tag}"
+                    dt_key = f"aks_done_dt_{uid_tag}"
+                    nt_key = f"aks_done_nt_{uid_tag}"
+                    err_key = f"aks_done_err_{uid_tag}"
 
-                row_txt_col, row_chk_col = st.columns([4.4, 1.3], vertical_alignment="top")
-                with row_txt_col:
-                    st.markdown(
-                        f"""
-                        <div class="{box_cls}">
-                            <div style="font-size:0.82rem; color:{TEAL}; font-weight:800; margin-bottom:0.3rem;">▸ {meta_str}{durum_rozet}</div>
-                            <div style="color:{TEXT_LIGHT}; font-size:0.98rem; font-weight:500; line-height:1.5;">{item_aks['not']}</div>
-                            {tamamlanma_ozet_html}
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                with row_chk_col:
-                    st.checkbox("Tamamlandı", key=chk_key)
+                    if chk_key not in st.session_state:
+                        st.session_state[chk_key] = False
+                    if dt_key not in st.session_state:
+                        st.session_state[dt_key] = date.today()
+                    if nt_key not in st.session_state:
+                        st.session_state[nt_key] = ""
 
-                if st.session_state[chk_key]:
-                    with st.container():
-                        f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
-                        with f_dt_col:
-                            st.date_input("Tamamlanma Tarihi", key=dt_key, format="DD.MM.YYYY")
-                        with f_nt_col:
-                            st.text_input(
-                                "Nasıl Tamamlandı? (Not Zorunlu)",
-                                key=nt_key,
-                                placeholder="Örn: Yönetici ve İK ile görüşüldü, ekip geçişi sağlandı.",
-                            )
-                        with f_btn_col:
-                            if st.button("Tamamlamayı Kaydet", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
-                                note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
-                                dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=date.today()).strftime("%d.%m.%Y")
-                                if not _has_completion_note(note_input_val):
-                                    st.session_state[chk_key] = False
-                                    st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon tamamlanamaz!"
-                                    st.rerun()
-                                else:
-                                    st.session_state.pop(err_key, None)
-                                    update_action_completion_record(
-                                        kayit_id=item_aks["kayit_id"],
-                                        sicil_no=item_aks["sicil_no"],
-                                        completed=True,
-                                        completion_date=dt_input_val,
-                                        completion_note=note_input_val,
-                                    )
-                                    st.rerun()
-
-                        if st.session_state.get(err_key):
-                            st.warning(st.session_state[err_key])
-                else:
-                    if item_aks["tamamlandi"]:
-                        update_action_completion_record(
-                            kayit_id=item_aks["kayit_id"],
-                            sicil_no=item_aks["sicil_no"],
-                            completed=False,
-                            completion_date="",
-                            completion_note="",
+                    row_txt_col, row_chk_col = st.columns([4.4, 1.3], vertical_alignment="top")
+                    with row_txt_col:
+                        st.markdown(
+                            f"""
+                            <div class="action-note-box">
+                                <div style="font-size:0.82rem; color:{TEAL}; font-weight:800; margin-bottom:0.3rem;">▸ {meta_str}</div>
+                                <div style="color:{TEXT_LIGHT}; font-size:0.98rem; font-weight:500; line-height:1.5;">{item_aks['not']}</div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
                         )
-                        st.rerun()
+                    with row_chk_col:
+                        st.checkbox("Tamamlandı", key=chk_key)
+
+                    if st.session_state[chk_key]:
+                        with st.container():
+                            f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
+                            with f_dt_col:
+                                st.date_input("Kapatılma Tarihi", key=dt_key, format="DD.MM.YYYY")
+                            with f_nt_col:
+                                st.text_input(
+                                    "Nasıl Tamamlandı? (Kapatma Yorumu Zorunlu)",
+                                    key=nt_key,
+                                    placeholder="Örn: Yönetici ve İK ile görüşüldü, aksiyon hayata geçirildi.",
+                                )
+                            with f_btn_col:
+                                if st.button("Aksiyonu Kapat", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
+                                    note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
+                                    dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=date.today()).strftime("%d.%m.%Y")
+                                    if not _has_completion_note(note_input_val):
+                                        st.session_state[chk_key] = False
+                                        st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon kapatılamaz!"
+                                        st.rerun()
+                                    else:
+                                        st.session_state.pop(err_key, None)
+                                        st.session_state[chk_key] = False
+                                        update_action_completion_record(
+                                            kayit_id=item_aks["kayit_id"],
+                                            sicil_no=item_aks["sicil_no"],
+                                            completed=True,
+                                            completion_date=dt_input_val,
+                                            completion_note=note_input_val,
+                                        )
+                                        st.session_state.aksiyon_gorunum_modu = "kapali"
+                                        st.rerun()
+
+                            if st.session_state.get(err_key):
+                                st.warning(st.session_state[err_key])
+            else:
+                st.info("Seçili filtre kapsamında açık aksiyon bulunmuyor.")
         else:
-            st.info("Seçili filtre kapsamında aksiyon planı gerekli kayıt bulunmuyor.")
+            if kapali_liste:
+                for item_aks in kapali_liste:
+                    meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
+                    meta_str = " • ".join(meta_parcalar)
+                    uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
+                    kapatilma_tarihi = item_aks["tamamlanma_tarihi"] or date.today().strftime("%d.%m.%Y")
+                    kapatma_yorumu = item_aks["tamamlanma_notu"] or "-"
+
+                    c_card, c_reopen = st.columns([4.5, 1.2], vertical_alignment="center")
+                    with c_card:
+                        st.markdown(
+                            f"""
+                            <div class="action-note-box-done">
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.35rem;">
+                                    <span style="font-size:0.84rem; color:#34D399; font-weight:800;">✓ KAPATILDI • {meta_str}</span>
+                                    <span style="background:rgba(16,185,129,0.18); border:1px solid rgba(16,185,129,0.5); color:#6EE7B7; font-size:0.82rem; font-weight:700; padding:0.15rem 0.6rem; border-radius:999px;">
+                                        Kapatılma Tarihi: {kapatilma_tarihi}
+                                    </span>
+                                </div>
+                                <div style="color:{TEXT_LIGHT}; font-size:0.96rem; font-weight:500; line-height:1.5; margin-bottom:0.5rem;">{item_aks['not']}</div>
+                                <div style="padding-top:0.45rem; border-top:1px dashed rgba(52,211,153,0.35); font-size:0.9rem; color:#A7F3D0;">
+                                    <b>Kapatma Yorumu / Nasıl Tamamlandı:</b> {kapatma_yorumu}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    with c_reopen:
+                        if st.button("↩ Yeniden Aç", key=f"reopen_aks_{uid_tag}", use_container_width=True):
+                            st.session_state[f"aks_done_chk_{uid_tag}"] = False
+                            update_action_completion_record(
+                                kayit_id=item_aks["kayit_id"],
+                                sicil_no=item_aks["sicil_no"],
+                                completed=False,
+                                completion_date="",
+                                completion_note="",
+                            )
+                            st.rerun()
+            else:
+                st.info("Henüz kapatılan bir aksiyon bulunmuyor.")
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📈 İzlenim Paylaşım Puanlaması — 2025 vs 2026 Karşılaştırması")
