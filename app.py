@@ -2015,7 +2015,7 @@ with st.sidebar:
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
-# Üst başlık + sağ köşede genel duygu ifadesi ve yüzde dağılımı
+# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı
 hdr_left, hdr_right = st.columns([2.7, 1.3])
 with hdr_left:
     st.markdown(
@@ -2028,7 +2028,8 @@ with hdr_left:
         unsafe_allow_html=True,
     )
 with hdr_right:
-    st.markdown(render_corner_mood_widget(df_all), unsafe_allow_html=True)
+    mood_slot = st.empty()
+    mood_slot.markdown(render_corner_mood_widget(df_all), unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -2338,6 +2339,9 @@ elif sayfa == "Standart Dashboard & Sunum":
         if sel_ik_f != "Tümü" and "ik_is_ortagi" in df_view.columns:
             df_view = df_view[df_view["ik_is_ortagi"] == sel_ik_f]
 
+    # Seçili filtreye göre sağ üstteki köşe duygu kartını güncelle
+    mood_slot.markdown(render_corner_mood_widget(df_view), unsafe_allow_html=True)
+
     k1, k2, k3, k4 = st.columns(4)
     puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_view.columns]
     genel_ort = (
@@ -2603,6 +2607,7 @@ else:
             mask = df_all.apply(lambda s: s.astype(str).str.lower().str.contains(q_low, na=False)).any(axis=1)
             df_all = df_all[mask].copy()
             st.caption(f"Filtrelenen kayıt sayısı: {len(df_all)}")
+            mood_slot.markdown(render_corner_mood_widget(df_all), unsafe_allow_html=True)
 
     if df_all.empty:
         st.info("Henüz kayıt bulunmuyor.")
