@@ -80,11 +80,14 @@ st.markdown(
             border: 1px solid {CARD_BORDER};
             border-left: 5px solid {TEAL};
             border-radius: 12px;
-            padding: 1.2rem 1.5rem;
-            margin-bottom: 1rem;
+            padding: 1.15rem 1.45rem;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }}
         .panel-brand {{
-            font-size: 1.5rem;
+            font-size: 1.45rem;
             font-weight: 800;
             letter-spacing: -0.5px;
             color: {TEXT_LIGHT};
@@ -94,6 +97,57 @@ st.markdown(
         }}
         .panel-purple {{
             color: {PURPLE_LIGHT};
+        }}
+        .mood-corner-card {{
+            background: linear-gradient(145deg, #131E33 0%, #171933 100%);
+            border: 1px solid {CARD_BORDER};
+            border-radius: 12px;
+            padding: 0.9rem 1.05rem;
+            height: 100%;
+        }}
+        .mood-top-row {{
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }}
+        .mood-svg-wrap {{
+            width: 48px;
+            height: 48px;
+            flex-shrink: 0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(15, 23, 42, 0.75);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }}
+        .mood-title {{
+            font-size: 0.98rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }}
+        .mood-sub {{
+            font-size: 0.75rem;
+            color: {TEXT_MUTED};
+            margin-top: 0.15rem;
+        }}
+        .mood-pct-row {{
+            display: flex;
+            justify-content: space-between;
+            gap: 0.4rem;
+            margin-top: 0.65rem;
+            font-size: 0.74rem;
+            font-weight: 600;
+        }}
+        .mood-bar-track {{
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            overflow: hidden;
+            display: flex;
+            background: #0F172A;
+            margin-top: 0.35rem;
+            border: 1px solid rgba(148, 163, 184, 0.15);
         }}
         .metric-card {{
             background-color: {CARD_DARK};
@@ -147,6 +201,106 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
+    """Ana ekranın sağ üst köşesinde genel duygu ifadesi ve altında yüzde dağılımı gösterir."""
+    if df_source is None or df_source.empty or "duygu_durumu" not in df_source.columns:
+        svg_empty = f"""
+        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="18" r="14" stroke="{TEXT_MUTED}" stroke-width="2.2"/>
+            <circle cx="13" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
+            <circle cx="23" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
+            <path d="M12.5 23H23.5" stroke="{TEXT_MUTED}" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>
+        """
+        return f"""
+        <div class="mood-corner-card">
+            <div class="mood-top-row">
+                <div class="mood-svg-wrap">{svg_empty}</div>
+                <div>
+                    <div class="mood-title" style="color:{TEXT_MUTED};">Genel Durum: Veri Yok</div>
+                    <div class="mood-sub">Filtrede kayıt bulunamadı</div>
+                </div>
+            </div>
+            <div class="mood-pct-row">
+                <span style="color:{POS_COLOR};">Olumlu %0.0</span>
+                <span style="color:{NEU_COLOR};">Nötr %0.0</span>
+                <span style="color:{NEG_COLOR};">Olumsuz %0.0</span>
+            </div>
+            <div class="mood-bar-track"></div>
+        </div>
+        """
+
+    s_duygu = df_source["duygu_durumu"].astype(str).str.strip()
+    total = len(s_duygu)
+    pos_cnt = int((s_duygu == "Olumlu").sum())
+    neg_cnt = int((s_duygu == "Olumsuz").sum())
+    neu_cnt = max(0, total - pos_cnt - neg_cnt)
+
+    pos_pct = round((pos_cnt / total) * 100, 1) if total > 0 else 0.0
+    neg_pct = round((neg_cnt / total) * 100, 1) if total > 0 else 0.0
+    neu_pct = round(max(0.0, 100.0 - pos_pct - neg_pct), 1) if total > 0 else 0.0
+
+    if pos_cnt >= neg_cnt and pos_cnt >= neu_cnt:
+        durum_baslik = "Genel Olumlu"
+        durum_renk = POS_COLOR
+        vurgu_yuzde = pos_pct
+        svg_face = f"""
+        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="18" r="14" fill="rgba(16, 185, 129, 0.16)" stroke="{POS_COLOR}" stroke-width="2.2"/>
+            <circle cx="13" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
+            <circle cx="23" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
+            <path d="M11.8 20.5C13.3 23.4 15.5 24.8 18 24.8C20.5 24.8 22.7 23.4 24.2 20.5" stroke="{POS_COLOR}" stroke-width="2.3" stroke-linecap="round"/>
+        </svg>
+        """
+    elif neg_cnt > pos_cnt and neg_cnt >= neu_cnt:
+        durum_baslik = "Genel Olumsuz"
+        durum_renk = NEG_COLOR
+        vurgu_yuzde = neg_pct
+        svg_face = f"""
+        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="18" r="14" fill="rgba(248, 113, 113, 0.16)" stroke="{NEG_COLOR}" stroke-width="2.2"/>
+            <circle cx="13" cy="15" r="1.9" fill="{NEG_COLOR}"/>
+            <circle cx="23" cy="15" r="1.9" fill="{NEG_COLOR}"/>
+            <path d="M12 24.2C13.5 21.4 15.6 20 18 20C20.4 20 22.5 21.4 24 24.2" stroke="{NEG_COLOR}" stroke-width="2.3" stroke-linecap="round"/>
+        </svg>
+        """
+    else:
+        durum_baslik = "Genel Nötr"
+        durum_renk = TEAL
+        vurgu_yuzde = neu_pct
+        svg_face = f"""
+        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="18" cy="18" r="14" fill="rgba(34, 211, 238, 0.14)" stroke="{TEAL}" stroke-width="2.2"/>
+            <circle cx="13" cy="15" r="1.9" fill="{TEAL}"/>
+            <circle cx="23" cy="15" r="1.9" fill="{TEAL}"/>
+            <path d="M12.2 22.2H23.8" stroke="{TEAL}" stroke-width="2.3" stroke-linecap="round"/>
+        </svg>
+        """
+
+    return f"""
+    <div class="mood-corner-card" style="border-color: {durum_renk}55;">
+        <div class="mood-top-row">
+            <div class="mood-svg-wrap">{svg_face}</div>
+            <div>
+                <div class="mood-title" style="color:{durum_renk};">{durum_baslik} <span style="color:{TEXT_LIGHT}; font-size:0.88rem;">(%{vurgu_yuzde:.1f})</span></div>
+                <div class="mood-sub">{total} görüşme üzerinden dağılım</div>
+            </div>
+        </div>
+        <div class="mood-pct-row">
+            <span style="color:{POS_COLOR};">Olumlu %{pos_pct:.1f}</span>
+            <span style="color:{NEU_COLOR};">Nötr %{neu_pct:.1f}</span>
+            <span style="color:{NEG_COLOR};">Olumsuz %{neg_pct:.1f}</span>
+        </div>
+        <div class="mood-bar-track">
+            <div style="width:{pos_pct}%; background:{POS_COLOR};"></div>
+            <div style="width:{neu_pct}%; background:{NEU_COLOR};"></div>
+            <div style="width:{neg_pct}%; background:{NEG_COLOR};"></div>
+        </div>
+    </div>
+    """
+
 
 GMY_BIRIM_MAP = {
     "10000014-Genel Müdürlük": [
@@ -313,7 +467,6 @@ HALF_STEP_SCORE_OPTIONS = ["Boş", 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
 
 def _parse_date_safe(val: object, fallback: date | None = None) -> date:
-    """Farklı tarih formatlarını (YYYY-MM-DD, DD.MM.YYYY vb.) güvenli şekilde date objesine çevirir."""
     default_d = fallback if fallback is not None else date.today()
     if isinstance(val, datetime):
         return val.date()
@@ -333,7 +486,6 @@ def _parse_date_safe(val: object, fallback: date | None = None) -> date:
 
 
 def _snap_half_step(raw_val: object) -> float | None:
-    """Sayısal değeri 1.0 - 5.0 aralığında 0.5 adımlarına yuvarlar; geçersiz/boş ise None döner."""
     if raw_val is None or raw_val == "":
         return None
     if isinstance(raw_val, str) and raw_val.strip().lower() in ("boş", "bos", "none", "nan"):
@@ -352,10 +504,6 @@ def _snap_half_step(raw_val: object) -> float | None:
 
 
 def render_synced_score_row(p_key: str, p_label: str, default_val: float | None, scope_tag: str):
-    """
-    1-5 puanlama için bar (st.select_slider) ile yanında manuel girişi (st.number_input + Boş/Aktif)
-    çift yönlü senkronize eder. Manuel puan girildiğinde bar anında güncellenir.
-    """
     state_key = f"score_val_{scope_tag}_{p_key}"
     bar_key = f"score_bar_{scope_tag}_{p_key}"
     num_key = f"score_num_{scope_tag}_{p_key}"
@@ -555,7 +703,6 @@ CANONICAL_TOPIC_LABELS = {
 
 
 def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
-    """Sicil numarasına göre çalışan özlük ve organizasyon kataloğu oluşturur."""
     directory = {}
     all_gmy_birim = [(g, b) for g, bs in GMY_BIRIM_MAP.items() for b in bs]
 
@@ -1865,18 +2012,25 @@ with st.sidebar:
         ["1-1 Görüşme Kayıt", "Standart Dashboard & Sunum", "Ham Veri Havuzu"],
     )
 
-st.markdown(
-    f"""
-    <div class="panel-header">
-        <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> {sayfa}</div>
-        <div style="color:#94A3B8; margin-top:0.25rem;">Aktif Kullanıcı: <b>{user['ad_soyad']}</b> &nbsp;•&nbsp; {data_source_label}</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
+
+# Üst başlık + sağ köşede genel duygu ifadesi ve yüzde dağılımı
+hdr_left, hdr_right = st.columns([2.7, 1.3], vertical_alignment="stretch")
+with hdr_left:
+    st.markdown(
+        f"""
+        <div class="panel-header">
+            <div class="panel-brand"><span class="panel-accent">&lt;</span> izlenim<span class="panel-accent">.</span> <span class="panel-purple">|</span> {sayfa}</div>
+            <div style="color:#94A3B8; margin-top:0.25rem;">Aktif Kullanıcı: <b>{user['ad_soyad']}</b> &nbsp;•&nbsp; {data_source_label}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with hdr_right:
+    st.markdown(render_corner_mood_widget(df_all), unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 if sayfa == "1-1 Görüşme Kayıt":
     st.markdown("#### 🔍 Kayıt Seçimi veya Yeni Görüşme Başlatma")
@@ -1933,7 +2087,6 @@ if sayfa == "1-1 Görüşme Kayıt":
             placeholder="Ad Soyad",
         )
     with s_col3:
-        # Görüşme Tarihi: tıklandığında açılan takvim seçici
         default_gt_date = _parse_date_safe(prefill.get("gorusme_tarihi"), fallback=date.today())
         gorusme_tarihi_dt = st.date_input(
             "Görüşme Tarihi",
