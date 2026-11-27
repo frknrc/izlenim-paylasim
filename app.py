@@ -2336,7 +2336,7 @@ elif is_presentation_mod:
         bolum_vals = sorted(df_scoped["bolum"].dropna().unique().tolist()) if "bolum" in df_scoped.columns and not df_scoped.empty else BOLUM_OPTIONS
         sel_bolum_f = st.selectbox("Bölüm", ["Tümü"] + bolum_vals)
 
-    f5, f6, f7 = st.columns(3)
+    f5, f6, f7, f8 = st.columns(4)
     with f5:
         tarih_vals = sorted(df_scoped["gorusme_tarihi"].dropna().unique().tolist()) if "gorusme_tarihi" in df_scoped.columns and not df_scoped.empty else []
         sel_tarih_f = st.selectbox("Görüşme Tarihi", ["Tümü"] + tarih_vals)
@@ -2346,6 +2346,9 @@ elif is_presentation_mod:
     with f7:
         ik_vals = sorted(df_scoped["ik_is_ortagi"].dropna().unique().tolist()) if "ik_is_ortagi" in df_scoped.columns and not df_scoped.empty else IK_IS_ORTAGI_OPTIONS
         sel_ik_f = st.selectbox("İK İş Ortağı", ["Tümü"] + ik_vals)
+    with f8:
+        lok_vals = sorted(df_scoped["lokasyon"].dropna().unique().tolist()) if "lokasyon" in df_scoped.columns and not df_scoped.empty else LOKASYON_OPTIONS
+        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + lok_vals)
 
     df_view = df_scoped.copy()
     if not df_view.empty:
@@ -2363,6 +2366,8 @@ elif is_presentation_mod:
             df_view = df_view[df_view["donem"] == sel_donem_f]
         if sel_ik_f != "Tümü" and "ik_is_ortagi" in df_view.columns:
             df_view = df_view[df_view["ik_is_ortagi"] == sel_ik_f]
+        if sel_lok_f != "Tümü" and "lokasyon" in df_view.columns:
+            df_view = df_view[df_view["lokasyon"] == sel_lok_f]
 
     mood_slot.markdown(render_corner_mood_widget(df_view, highlight_positive=True), unsafe_allow_html=True)
 
@@ -2376,17 +2381,14 @@ elif is_presentation_mod:
     aksiyon_adet = int((df_view["aksiyon_ihtiyaci"] == "Evet").sum()) if "aksiyon_ihtiyaci" in df_view.columns and not df_view.empty else 0
     olumsuz_adet = int((df_view["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
     olumlu_adet = int((df_view["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
+    notr_adet = max(0, len(df_view) - olumlu_adet - olumsuz_adet)
+    olumsuz_sub = "Olumsuz kayıt yok" if olumsuz_adet == 0 else f"Olumsuz: {olumsuz_adet} kayıt"
 
     for col_box, lbl, val, sub in [
         (k1, "Toplam Görüşülen Kişi", str(len(df_view)), "Seçili filtre kapsamı"),
         (k2, "Genel Puan Ortalaması", f"{genel_ort} / 5.00", "Buçuklu puanlar dahil"),
         (k3, "Aksiyon Planlama Sayısı", f"{aksiyon_adet} / {len(df_view)}", "Aksiyon açılan görüşme"),
-        (
-            k4,
-            "Duygu Dağılımı",
-            f"{olumlu_adet} Olumlu / {max(0, len(df_view) - olumlu_adet - olumsuz_adet)} Nötr",
-            f"Olumsuz: {'Yok' if olumsuz_adet == 0 else olumsuz_adet}",
-        ),
+        (k4, "Duygu Dağılımı (Olumlu / Nötr)", f"{olumlu_adet} / {notr_adet}", olumsuz_sub),
     ]:
         col_box.markdown(
             f"""
