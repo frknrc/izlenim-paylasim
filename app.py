@@ -2759,10 +2759,7 @@ if sayfa == "1-1 Görüşme Kayıt":
 
 elif is_presentation_mod:
     allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
-    if user["rol"] != "admin" and not df_all.empty and "birim" in df_all.columns:
-        df_scoped = df_all[df_all["birim"].isin(allowed_birimler)].copy()
-    else:
-        df_scoped = df_all.copy()
+    df_scoped = df_all.copy()
 
     st.markdown("#### 🔎 Detaylı Filtreleme")
     f1, f2, f3, f4 = st.columns(4)
