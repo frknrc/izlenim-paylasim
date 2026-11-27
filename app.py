@@ -2381,7 +2381,12 @@ elif is_presentation_mod:
         (k1, "Toplam Görüşülen Kişi", str(len(df_view)), "Seçili filtre kapsamı"),
         (k2, "Genel Puan Ortalaması", f"{genel_ort} / 5.00", "Buçuklu puanlar dahil"),
         (k3, "Aksiyon Planlama Sayısı", f"{aksiyon_adet} / {len(df_view)}", "Aksiyon açılan görüşme"),
-        (k4, "Duygu Durumu (Olumlu / Olumsuz)", f"{olumlu_adet} / {olumsuz_adet}", f"Nötr: {max(0, len(df_view) - olumlu_adet - olumsuz_adet)}"),
+        (
+            k4,
+            "Duygu Dağılımı",
+            f"{olumlu_adet} Olumlu / {max(0, len(df_view) - olumlu_adet - olumsuz_adet)} Nötr",
+            f"Olumsuz: {'Yok' if olumsuz_adet == 0 else olumsuz_adet}",
+        ),
     ]:
         col_box.markdown(
             f"""
