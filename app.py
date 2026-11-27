@@ -1281,18 +1281,30 @@ def split_clauses(text: str) -> list[str]:
     return result if result else [cleaned]
 
 
-def classify_clause(clause: str, row_duygu: str = "", default_dir: str = "olumlu") -> str:
+def classify_clause(
+    clause: str,
+    row_duygu: str = "",
+    default_dir: str = "olumlu",
+    col_key: str = "",
+) -> str:
     low = tr_lower(clause)
+
+    if col_key == "q02_guclu_yonler":
+        strong_neg = ["sorun", "sıkıntı", "eksik", "yetersiz", "problem", "kopuk", "düşük", "kötü"]
+        if not any(w in low for w in strong_neg):
+            return "olumlu"
+
     pos_hits = sum(1 for w in POS_SIGNALS if tr_lower(w) in low)
     neg_hits = sum(1 for w in NEG_SIGNALS if tr_lower(w) in low)
-    if neg_hits > pos_hits:
-        return "olumsuz"
+
     if pos_hits > neg_hits:
         return "olumlu"
-    if row_duygu == "Olumsuz":
+    if neg_hits > pos_hits:
         return "olumsuz"
     if row_duygu == "Olumlu":
         return "olumlu"
+    if row_duygu == "Olumsuz":
+        return "olumsuz"
     return default_dir
 
 
@@ -1300,7 +1312,7 @@ def cluster_similar_statements(
     records: list[tuple[int, str]],
     top_n: int = 3,
     sim_threshold: float = 0.34,
-    max_items: int = 300,
+    max_items: int = 200,
 ) -> list[str]:
     if not records:
         return []
@@ -1396,12 +1408,12 @@ def cluster_similar_statements(
 
 def _df_fingerprint(df: pd.DataFrame) -> str:
     if df is None or df.empty:
-        return "empty"
+        return "empty_v3"
     try:
         payload = pd.util.hash_pandas_object(df, index=True).values.tobytes()
-        return str(zlib.crc32(payload))
+        return f"{zlib.crc32(payload)}_v3"
     except Exception:
-        return f"{len(df)}_{list(df.columns)}"
+        return f"{len(df)}_{list(df.columns)}_v3"
 
 
 def _df_to_json_safe(df: pd.DataFrame) -> str:
@@ -1461,12 +1473,6 @@ def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos
     return " ".join(paragraflar)
 
 
-@st.cache_data(show_spinner=False)
-def _analyze_department_cached(records_json: str, secili_gmy: str) -> dict:
-    df_scoped = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
-    return _analyze_department_impl(df_scoped, secili_gmy)
-
-
 def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
     if secili_gmy != "Tümü" and "gmy" in df_scoped.columns and not df_scoped.empty:
         df_dept = df_scoped[df_scoped["gmy"] == secili_gmy].copy()
@@ -1490,7 +1496,7 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
             if pd.notna(val) and str(val).strip():
                 def_dir = "olumsuz" if tc in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
                 for c_item in split_clauses(str(val)):
-                    if classify_clause(c_item, row_duygu, default_dir=def_dir) == "olumsuz":
+                    if classify_clause(c_item, row_duygu, default_dir=def_dir, col_key=tc) == "olumsuz":
                         dept_neg_all.append((person_idx, c_item))
                     else:
                         dept_pos_all.append((person_idx, c_item))
@@ -1523,7 +1529,7 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
                     if pd.notna(val) and str(val).strip():
                         def_dir = "olumsuz" if tc in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
                         for c_item in split_clauses(str(val)):
-                            if classify_clause(c_item, row_duygu, default_dir=def_dir) == "olumsuz":
+                            if classify_clause(c_item, row_duygu, default_dir=def_dir, col_key=tc) == "olumsuz":
                                 b_neg.append((p_idx, c_item))
                             else:
                                 b_pos.append((p_idx, c_item))
@@ -1578,6 +1584,66 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
     }
 
 
+@st.cache_data(show_spinner=False)
+def _cached_department_analysis(df_key: str, records_json: str, secili_gmy: str) -> dict:
+    df_scoped = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
+    return _analyze_department_impl(df_scoped, secili_gmy)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_top_short_bullets(
+    df_key: str,
+    records_json: str,
+    cols: tuple[str, ...],
+    top_n: int = 4,
+    direction: str | None = None,
+) -> list[str]:
+    df_view = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
+    if df_view.empty:
+        return []
+    recs = []
+    for p_idx, (_, r_item) in enumerate(df_view.iterrows()):
+        r_duygu = str(r_item.get("duygu_durumu", "") or "")
+        for c_key in cols:
+            if c_key not in df_view.columns:
+                continue
+            raw_v = r_item.get(c_key, "")
+            if pd.isna(raw_v) or not str(raw_v).strip():
+                continue
+            def_dir = "olumsuz" if c_key in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
+            for cl in split_clauses(str(raw_v)):
+                cl_dir = classify_clause(cl, r_duygu, default_dir=def_dir, col_key=c_key)
+                if direction is None or cl_dir == direction:
+                    recs.append((p_idx, cl))
+    return cluster_similar_statements(recs, top_n=top_n, max_items=180)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_hybrid_percentages(df_key: str, records_json: str) -> list[tuple[str, int, float]]:
+    df_view = pd.read_json(io.StringIO(records_json), orient="records") if records_json else pd.DataFrame()
+    if df_view.empty or "q12_ilerisi_calisma_modeli" not in df_view.columns:
+        return []
+    buckets = Counter()
+    total_ans = 0
+    for val in df_view["q12_ilerisi_calisma_modeli"].dropna():
+        txt = str(val).strip()
+        if not txt:
+            continue
+        total_ans += 1
+        low = tr_lower(txt)
+        if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış"]):
+            buckets["Tam Uzaktan / Evden"] += 1
+        elif any(k in low for k in ["ofis", "tam zamanlı ofis", "her gün ofis"]):
+            buckets["Ofis Ağırlıklı / Tam Ofis"] += 1
+        elif any(k in low for k in ["hibrit", "esnek", "gün", "haftada", "uzaktan", "denge"]):
+            buckets["Hibrit / Esnek Model"] += 1
+        else:
+            buckets["Diğer / Koşullu Görüş"] += 1
+    if total_ans == 0:
+        return []
+    return [(b_name, b_cnt, round((b_cnt / total_ans) * 100, 1)) for b_name, b_cnt in buckets.most_common()]
+
+
 def _compute_4_team_criteria(df_view: pd.DataFrame) -> list[dict]:
     def _mean_col(col_name: str):
         if df_view.empty or col_name not in df_view.columns:
@@ -1605,7 +1671,7 @@ def _compute_4_team_criteria(df_view: pd.DataFrame) -> list[dict]:
             txt = str(val).strip()
             if txt:
                 g_tot += 1
-                if classify_clause(txt) == "olumlu":
+                if classify_clause(txt, col_key="q03_ekip_rol_tatmin") == "olumlu":
                     g_pos += 1
 
     return [
@@ -1954,7 +2020,7 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
                 all_vals = ws.get_all_values()
                 id_col_idx = headers.index("kayit_id")
                 for r_idx, row_vals in enumerate(all_vals[1:], start=2):
-                    if len(r_vals) > id_col_idx and row_vals[id_col_idx] == edit_kayit_id:
+                    if len(row_vals) > id_col_idx and row_vals[id_col_idx] == edit_kayit_id:
                         updated_row = [record.get(h, "") for h in headers]
                         ws.update(f"A{r_idx}", [updated_row])
                         return True, f"Kayıt ({edit_kayit_id}) Google Sheets üzerinde güncellendi."
@@ -2441,6 +2507,605 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     prs.save(bio)
     bio.seek(0)
     return bio.getvalue()
+
+
+def render_izlenim_paylasim_module(
+    df_all: pd.DataFrame,
+    assigned_gmy_map: dict,
+    gmy_options: list[str],
+    mood_slot,
+):
+    allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
+    df_scoped = df_all.copy()
+
+    st.markdown("#### 🔎 Detaylı Filtreleme")
+    f1, f2, f3, f4 = st.columns(4)
+    with f1:
+        sel_gmy_f = st.selectbox("Genel Müdür Yardımcılığı", ["Tümü"] + gmy_options, key="ip_sel_gmy")
+    with f2:
+        dept_vals = sorted(df_scoped["departman"].dropna().unique().tolist()) if "departman" in df_scoped.columns and not df_scoped.empty else DEPARTMAN_OPTIONS
+        sel_dept_f = st.selectbox("Departman", ["Tümü"] + dept_vals, key="ip_sel_dept")
+    with f3:
+        if sel_gmy_f == "Tümü":
+            veri_birimler = sorted(df_scoped["birim"].dropna().unique().tolist()) if "birim" in df_scoped.columns and not df_scoped.empty else []
+            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(allowed_birimler + veri_birimler))
+        else:
+            veri_gmy_birimler = (
+                sorted(df_scoped[df_scoped["gmy"] == sel_gmy_f]["birim"].dropna().unique().tolist())
+                if "gmy" in df_scoped.columns and "birim" in df_scoped.columns and not df_scoped.empty
+                else []
+            )
+            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(assigned_gmy_map.get(sel_gmy_f, []) + veri_gmy_birimler))
+        sel_birim_f = st.selectbox("Birim", birim_filter_opts, key="ip_sel_birim")
+    with f4:
+        bolum_vals = sorted(df_scoped["bolum"].dropna().unique().tolist()) if "bolum" in df_scoped.columns and not df_scoped.empty else BOLUM_OPTIONS
+        sel_bolum_f = st.selectbox("Bölüm", ["Tümü"] + bolum_vals, key="ip_sel_bolum")
+
+    f5, f6, f7, f8 = st.columns(4)
+    with f5:
+        tarih_vals = sorted(df_scoped["gorusme_tarihi"].dropna().unique().tolist()) if "gorusme_tarihi" in df_scoped.columns and not df_scoped.empty else []
+        sel_tarih_f = st.selectbox("Görüşme Tarihi", ["Tümü"] + tarih_vals, key="ip_sel_tarih")
+    with f6:
+        donem_vals = sorted(df_scoped["donem"].dropna().unique().tolist()) if "donem" in df_scoped.columns and not df_scoped.empty else ["2026 - 2. Dönem"]
+        sel_donem_f = st.selectbox("Görüşme Dönemi", ["Tümü"] + donem_vals, key="ip_sel_donem")
+    with f7:
+        ik_vals = sorted(df_scoped["ik_is_ortagi"].dropna().unique().tolist()) if "ik_is_ortagi" in df_scoped.columns and not df_scoped.empty else IK_IS_ORTAGI_OPTIONS
+        sel_ik_f = st.selectbox("İK İş Ortağı", ["Tümü"] + ik_vals, key="ip_sel_ik")
+    with f8:
+        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + LOKASYON_OPTIONS, key="ip_sel_lok")
+
+    df_view = df_scoped.copy()
+    if not df_view.empty:
+        filters = [
+            ("gmy", sel_gmy_f),
+            ("departman", sel_dept_f),
+            ("birim", sel_birim_f),
+            ("bolum", sel_bolum_f),
+            ("gorusme_tarihi", sel_tarih_f),
+            ("donem", sel_donem_f),
+            ("ik_is_ortagi", sel_ik_f),
+            ("lokasyon", sel_lok_f),
+        ]
+        for col_name, sel_val in filters:
+            if sel_val != "Tümü" and col_name in df_view.columns:
+                df_view = df_view[df_view[col_name] == sel_val]
+
+    mood_slot.markdown(render_corner_mood_widget(df_view, highlight_positive=True), unsafe_allow_html=True)
+
+    k1, k2, k3, k4 = st.columns(4)
+    puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_view.columns]
+    if not df_view.empty and puan_cols:
+        stacked_scores = df_view[puan_cols].apply(pd.to_numeric, errors="coerce").stack()
+        genel_ort = round(float(stacked_scores.mean()), 2) if not stacked_scores.empty else 0.0
+    else:
+        genel_ort = 0.0
+
+    aksiyon_not_kayitlari = []
+    if not df_view.empty and "aksiyon_ihtiyaci" in df_view.columns:
+        df_aks = df_view[df_view["aksiyon_ihtiyaci"].astype(str).str.strip() == "Evet"]
+        default_done_dt = now_local().date().strftime("%d.%m.%Y")
+        for idx_aks, r_aks in df_aks.iterrows():
+            sic_no = str(r_aks.get("sicil_no", "") or "").strip()
+            not_txt = str(r_aks.get("aksiyon_notu", "") or "").strip() or AKSIYON_PLANI_MAP.get(sic_no, "")
+            if _has_meaningful_action_note(not_txt):
+                kisi_ad = str(r_aks.get("ad_soyad", "") or r_aks.get("calisan_rumuzu", "") or "Katılımcı").strip()
+                birim_ad = str(r_aks.get("birim", "") or "").strip()
+                gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
+                kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
+                done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
+                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or default_done_dt
+                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
+                aksiyon_not_kayitlari.append(
+                    {
+                        "kayit_id": kid_str,
+                        "sicil_no": sic_no,
+                        "kisi": f"{kisi_ad} ({sic_no})" if sic_no else kisi_ad,
+                        "birim": birim_ad,
+                        "tarih": gt_txt,
+                        "not": not_txt,
+                        "tamamlandi": is_done,
+                        "tamamlanma_tarihi": done_dt_str,
+                        "tamamlanma_notu": done_not_str,
+                    }
+                )
+
+    toplam_aksiyon_adet = len(aksiyon_not_kayitlari)
+    kapali_aksiyon_adet = sum(1 for x in aksiyon_not_kayitlari if x["tamamlandi"])
+    acik_aksiyon_adet = max(0, toplam_aksiyon_adet - kapali_aksiyon_adet)
+
+    if not df_view.empty and "duygu_durumu" in df_view.columns:
+        duygu_vc = df_view["duygu_durumu"].astype(str).str.strip().value_counts()
+        olumlu_adet = int(duygu_vc.get("Olumlu", 0))
+        olumsuz_adet = int(duygu_vc.get("Olumsuz", 0))
+        notr_adet = max(0, len(df_view) - olumlu_adet - olumsuz_adet)
+    else:
+        olumlu_adet = olumsuz_adet = notr_adet = 0
+
+    olumsuz_sub = "Olumsuz kayıt yok" if olumsuz_adet == 0 else f"Olumsuz: {olumsuz_adet} kayıt"
+
+    for col_box, lbl, val, sub in [
+        (k1, "Toplam Görüşülen Kişi", str(len(df_view)), "Seçili filtre kapsamı"),
+        (k2, "Genel Puan Ortalaması", f"{genel_ort} / 5.00", "Buçuklu puanlar dahil"),
+        (k3, "Toplam Oluşan Aksiyon", str(toplam_aksiyon_adet), f"Açık: {acik_aksiyon_adet} • Kapalı: {kapali_aksiyon_adet}"),
+        (k4, "Duygu Dağılımı (Olumlu / Nötr)", f"{olumlu_adet} / {notr_adet}", olumsuz_sub),
+    ]:
+        col_box.markdown(
+            f"""
+            <div class="metric-card">
+                <div class="metric-label">{lbl}</div>
+                <div class="metric-value">{val}</div>
+                <div class="metric-sub">{sub}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    df_key = _df_fingerprint(df_view)
+    df_json = _df_to_json_safe(df_view)
+    dept_res = _cached_department_analysis(df_key, df_json, sel_gmy_f)
+
+    exp_c1, exp_c2 = st.columns(2)
+    with exp_c1:
+        pptx_state_key = f"pptx_{df_key}_{sel_gmy_f}_{sel_donem_f}"
+        if st.button("📊 Sunumu Hazırla (.pptx)", use_container_width=True):
+            with st.spinner("Sunum oluşturuluyor..."):
+                st.session_state[pptx_state_key] = _cached_pptx_bytes(df_key, df_json, sel_gmy_f, sel_donem_f)
+        if pptx_state_key in st.session_state:
+            st.download_button(
+                label="📥 Sunumu İndir (.pptx)",
+                data=st.session_state[pptx_state_key],
+                file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+            )
+
+    with exp_c2:
+        pdf_state_key = f"pdf_{df_key}_{sel_gmy_f}_{sel_donem_f}"
+        if st.button("📄 Raporu PDF Olarak Hazırla (.pdf)", use_container_width=True):
+            with st.spinner("PDF raporu oluşturuluyor..."):
+                st.session_state[pdf_state_key] = build_pdf_summary_report(df_view, sel_gmy_f, sel_donem_f, dept_res)
+        if pdf_state_key in st.session_state:
+            st.download_button(
+                label="📥 PDF Raporunu İndir (.pdf)",
+                data=st.session_state[pdf_state_key],
+                file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if df_view.empty:
+        st.info("Seçili filtrelere uygun görüşme kaydı bulunamadı.")
+        return
+
+    st.subheader("📊 Aksiyon Durumu")
+    df_aks_durum = pd.DataFrame({
+        "Kategori": ["Kapalı Aksiyon", "Açık Aksiyon", "Toplam Aksiyon"],
+        "Adet": [kapali_aksiyon_adet, acik_aksiyon_adet, toplam_aksiyon_adet],
+    })
+    max_aks_x = max(5, int(toplam_aksiyon_adet * 1.18))
+    fig_aks = px.bar(
+        df_aks_durum,
+        x="Adet",
+        y="Kategori",
+        text="Adet",
+        orientation="h",
+        color="Kategori",
+        range_x=[0, max_aks_x],
+        color_discrete_map={
+            "Toplam Aksiyon": TEAL,
+            "Açık Aksiyon": PURPLE_LIGHT,
+            "Kapalı Aksiyon": POS_COLOR,
+        },
+    )
+    fig_aks.update_traces(textposition="outside", textfont=dict(size=13, color=TEXT_LIGHT), cliponaxis=False)
+    fig_aks.update_layout(
+        paper_bgcolor=CARD_DARK,
+        plot_bgcolor=CARD_DARK,
+        font_color=TEXT_LIGHT,
+        showlegend=False,
+        xaxis_title="Aksiyon Adedi",
+        yaxis_title="",
+        height=220,
+        margin=dict(l=15, r=35, t=15, b=20),
+    )
+    st.plotly_chart(fig_aks, use_container_width=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if "aksiyon_gorunum_modu" not in st.session_state:
+        st.session_state.aksiyon_gorunum_modu = "acik"
+
+    acik_liste = [x for x in aksiyon_not_kayitlari if not x["tamamlandi"]]
+    kapali_liste = [x for x in aksiyon_not_kayitlari if x["tamamlandi"]]
+
+    st.markdown(
+        f"""
+        <div class="action-showcase-banner">
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                <div>
+                    <div style="font-size:1.25rem; font-weight:800; color:#F8FAFC; letter-spacing:-0.2px;">⚡ ÖNE ÇIKAN AKSİYON PLANI</div>
+                    <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Aşağıdaki görünümlerden Açık veya Kapatılan Aksiyonları seçerek detayları inceleyebilirsiniz</div>
+                </div>
+                <div style="background:rgba(167,139,250,0.2); border:1px solid rgba(167,139,250,0.6); color:#DDD6FE; font-weight:800; font-size:0.9rem; padding:0.35rem 0.75rem; border-radius:999px;">
+                    {acik_aksiyon_adet} Açık • {kapali_aksiyon_adet} Kapatılan ({toplam_aksiyon_adet} Toplam)
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    btn_col_acik, btn_col_kapali = st.columns(2)
+    with btn_col_acik:
+        acik_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "acik" else ""
+        if st.button(f"📂 Açık Aksiyonlar ({acik_aksiyon_adet}){acik_aktif_tag}", key="btn_show_open_actions", use_container_width=True):
+            st.session_state.aksiyon_gorunum_modu = "acik"
+            st.rerun()
+    with btn_col_kapali:
+        kapali_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "kapali" else ""
+        if st.button(f"✅ Kapatılan Aksiyonlar ({kapali_aksiyon_adet}){kapali_aktif_tag}", key="btn_show_closed_actions", use_container_width=True):
+            st.session_state.aksiyon_gorunum_modu = "kapali"
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    if st.session_state.aksiyon_gorunum_modu == "acik":
+        if acik_liste:
+            for item_aks in acik_liste:
+                meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
+                meta_str = " • ".join(meta_parcalar)
+                uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
+                chk_key = f"aks_done_chk_{uid_tag}"
+                dt_key = f"aks_done_dt_{uid_tag}"
+                nt_key = f"aks_done_nt_{uid_tag}"
+                err_key = f"aks_done_err_{uid_tag}"
+                reset_flag_key = f"aks_reset_chk_{uid_tag}"
+
+                if st.session_state.pop(reset_flag_key, False):
+                    st.session_state[chk_key] = False
+                    st.session_state[nt_key] = ""
+
+                if chk_key not in st.session_state:
+                    st.session_state[chk_key] = False
+                if dt_key not in st.session_state:
+                    st.session_state[dt_key] = now_local().date()
+                if nt_key not in st.session_state:
+                    st.session_state[nt_key] = ""
+
+                row_txt_col, row_chk_col = st.columns([4.4, 1.3], vertical_alignment="top")
+                with row_txt_col:
+                    st.markdown(
+                        f"""
+                        <div class="action-note-box">
+                            <div style="font-size:0.82rem; color:{TEAL}; font-weight:800; margin-bottom:0.3rem;">▸ {meta_str}</div>
+                            <div style="color:{TEXT_LIGHT}; font-size:0.98rem; font-weight:500; line-height:1.5;">{item_aks['not']}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with row_chk_col:
+                    st.checkbox("Tamamlandı", key=chk_key)
+
+                if st.session_state.get(chk_key, False):
+                    f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
+                    with f_dt_col:
+                        st.date_input("Kapatılma Tarihi", key=dt_key, format="DD.MM.YYYY")
+                    with f_nt_col:
+                        st.text_input(
+                            "Nasıl Tamamlandı? (Kapatma Yorumu Zorunlu)",
+                            key=nt_key,
+                            placeholder="Örn: Yönetici ve İK ile görüşüldü, aksiyon hayata geçirildi.",
+                        )
+                    with f_btn_col:
+                        if st.button("Aksiyonu Kapat", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
+                            note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
+                            dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=now_local().date()).strftime("%d.%m.%Y")
+                            if not _has_completion_note(note_input_val):
+                                st.session_state[reset_flag_key] = True
+                                st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon kapatılamaz!"
+                                st.rerun()
+                            else:
+                                st.session_state.pop(err_key, None)
+                                st.session_state[reset_flag_key] = True
+                                update_action_completion_record(
+                                    kayit_id=item_aks["kayit_id"],
+                                    sicil_no=item_aks["sicil_no"],
+                                    completed=True,
+                                    completion_date=dt_input_val,
+                                    completion_note=note_input_val,
+                                )
+                                st.session_state.aksiyon_gorunum_modu = "kapali"
+                                st.rerun()
+
+                    if st.session_state.get(err_key):
+                        st.warning(st.session_state[err_key])
+        else:
+            st.info("Seçili filtre kapsamında açık aksiyon bulunmuyor.")
+    else:
+        if kapali_liste:
+            for item_aks in kapali_liste:
+                meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
+                meta_str = " • ".join(meta_parcalar)
+                uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
+                kapatilma_tarihi = item_aks["tamamlanma_tarihi"] or now_local().date().strftime("%d.%m.%Y")
+                kapatma_yorumu = item_aks["tamamlanma_notu"] or "-"
+
+                c_card, c_reopen = st.columns([4.5, 1.2], vertical_alignment="center")
+                with c_card:
+                    st.markdown(
+                        f"""
+                        <div class="action-note-box-done">
+                            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.35rem;">
+                                <span style="font-size:0.84rem; color:#34D399; font-weight:800;">✓ KAPATILDI • {meta_str}</span>
+                                <span style="background:rgba(16,185,129,0.18); border:1px solid rgba(16,185,129,0.5); color:#6EE7B7; font-size:0.82rem; font-weight:700; padding:0.15rem 0.6rem; border-radius:999px;">
+                                    Kapatılma Tarihi: {kapatilma_tarihi}
+                                </span>
+                            </div>
+                            <div style="color:{TEXT_LIGHT}; font-size:0.96rem; font-weight:500; line-height:1.5; margin-bottom:0.5rem;">{item_aks['not']}</div>
+                            <div style="padding-top:0.45rem; border-top:1px dashed rgba(52,211,153,0.35); font-size:0.9rem; color:#A7F3D0;">
+                                <b>Kapatma Yorumu / Nasıl Tamamlandı:</b> {kapatma_yorumu}
+                            </div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                with c_reopen:
+                    if st.button("↩ Yeniden Aç", key=f"reopen_aks_{uid_tag}", use_container_width=True):
+                        st.session_state[f"aks_reset_chk_{uid_tag}"] = True
+                        update_action_completion_record(
+                            kayit_id=item_aks["kayit_id"],
+                            sicil_no=item_aks["sicil_no"],
+                            completed=False,
+                            completion_date="",
+                            completion_note="",
+                        )
+                        st.rerun()
+        else:
+            st.info("Henüz kapatılan bir aksiyon bulunmuyor.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📈 İzlenim Paylaşım Puanlaması — 2025 vs 2026 Karşılaştırması")
+
+    def _col_avg(col_k):
+        if col_k not in df_view.columns:
+            return 0.0
+        s = pd.to_numeric(df_view[col_k], errors="coerce").dropna()
+        return round(float(s.mean()), 2) if not s.empty else 0.0
+
+    comp_rows = [
+        {"Kriter": "Genel Memnuniyet / Aidiyet", "2025 Sonuçları": 4.10, "2026 Sonuçları": _col_avg("p_genel_memnuniyet")},
+        {"Kriter": "Ücret Motivasyonu", "2025 Sonuçları": 3.40, "2026 Sonuçları": _col_avg("p_ucret_yan_hak")},
+        {"Kriter": "Ekip Motivasyonu", "2025 Sonuçları": 3.50, "2026 Sonuçları": _col_avg("p_ekip_motivasyonu")},
+        {"Kriter": "Kendi Motivasyonu", "2025 Sonuçları": 3.70, "2026 Sonuçları": _col_avg("p_kendi_motivasyonu")},
+        {"Kriter": "İş-Yaşam Dengesi", "2025 Sonuçları": 3.80, "2026 Sonuçları": _col_avg("p_is_yasam_dengesi")},
+        {"Kriter": "Direktörüyle İletişim", "2025 Sonuçları": 3.40, "2026 Sonuçları": _col_avg("p_direktor_iletisimi")},
+        {"Kriter": "Üst Yönetim (GMY) İletişimi", "2025 Sonuçları": 3.80, "2026 Sonuçları": _col_avg("p_gmy_iletisimi")},
+    ]
+    df_comp = pd.DataFrame(comp_rows)
+    df_comp["Fark (2026 - 2025)"] = (df_comp["2026 Sonuçları"] - df_comp["2025 Sonuçları"]).round(2)
+
+    c_tbl, c_grp = st.columns([1.1, 1.3])
+    with c_tbl:
+        st.dataframe(df_comp, use_container_width=True, hide_index=True)
+    with c_grp:
+        df_melt = df_comp.melt(id_vars="Kriter", value_vars=["2025 Sonuçları", "2026 Sonuçları"], var_name="Yıl", value_name="Puan")
+        fig_comp = px.bar(
+            df_melt,
+            x="Puan",
+            y="Kriter",
+            color="Yıl",
+            barmode="group",
+            orientation="h",
+            range_x=[0, 5],
+            color_discrete_map={"2025 Sonuçları": PURPLE_LIGHT, "2026 Sonuçları": TEAL},
+        )
+        fig_comp.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, height=300, margin=dict(l=10, r=10, t=15, b=15))
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("İzlenim Paylaşım Değerlendirme – İçerik")
+
+    def _mean_metric(col_name: str):
+        if col_name not in df_view.columns:
+            return None
+        s_num = pd.to_numeric(df_view[col_name], errors="coerce").dropna()
+        return round(float(s_num.mean()), 2) if not s_num.empty else None
+
+    def _face_badge(score):
+        if score is None:
+            return "😐 Veri Yok"
+        if score >= 4.0:
+            return "😄 Güçlü / Memnun"
+        if score >= 3.2:
+            return "🙂 Dengeli / İyi"
+        return "😟 İyileştirme Gerekli"
+
+    mem_val = _mean_metric("p_genel_memnuniyet")
+    gmy_val = _mean_metric("p_gmy_iletisimi")
+    ucret_val = _mean_metric("p_ucret_yan_hak")
+    yz_val = _mean_metric("p_yz_kullanim")
+
+    hybrid_dist = _cached_hybrid_percentages(df_key, df_json)
+    hybrid_summary_txt = (
+        " • ".join([f"{b_n}: %{p_v:.1f}" for b_n, _, p_v in hybrid_dist[:3]])
+        if hybrid_dist
+        else "Yanıt dağılımı için detay açın"
+    )
+
+    content_cards = [
+        {"key": "card_1_softtech", "baslik": "1. Softtech Güçlü & Gelişim Alanları", "aciklama": "Şirketin güçlü ve gelişime açık yönleri", "gosterge": f"Genel Memnuniyet: {mem_val if mem_val is not None else '-'}/5.00", "durum": _face_badge(mem_val), "accent": "teal"},
+        {"key": "card_2_karar", "baslik": "2. Karar Alma Süreçleri & Strateji", "aciklama": "Karar alma hızı ve üst yönetim strateji süreçleri", "gosterge": f"GMY İletişimi: {gmy_val if gmy_val is not None else '-'}/5.00", "durum": _face_badge(gmy_val), "accent": "purple"},
+        {"key": "card_3_hibrit", "baslik": "3. Hibrit Ritmi", "aciklama": "İlerisi için tercih edilen çalışma modeli dağılımı", "gosterge": hybrid_summary_txt, "durum": "📊 Yüzdelik Dağılım", "accent": "teal"},
+        {"key": "card_4_ucret", "baslik": "4. Ücret & Yan Haklar", "aciklama": "Ücret, prim, yan haklar ve çalışan merkezi yorumları", "gosterge": f"Ücret/Yan Hak: {ucret_val if ucret_val is not None else '-'}/5.00", "durum": _face_badge(ucret_val), "accent": "purple"},
+        {"key": "card_5_yz", "baslik": "5. Yapay Zeka Adaptasyonu", "aciklama": "CodeMantis, Amigo ve Asistan kullanım düzeyi", "gosterge": f"YZ Kullanım Sıklığı: {yz_val if yz_val is not None else '-'}/5.00", "durum": _face_badge(yz_val), "accent": "teal"},
+        {"key": "card_6_harmony", "baslik": "6. Harmony Adaptasyonu", "aciklama": "Departmanın Harmony ve karne süreçlerine uyumu", "gosterge": "Harmony & karne geri bildirimleri", "durum": "🔄 Süreç Görünümü", "accent": "purple"},
+        {"key": "card_7_toplantilar", "baslik": "7. Toplandığımıza Değsin", "aciklama": "Toplantı verimlilik hassasiyeti ve tutumu", "gosterge": "Toplantı verimliliği değerlendirmeleri", "durum": "⏱️ Verimlilik Görünümü", "accent": "teal"},
+    ]
+
+    if "selected_content_card" not in st.session_state:
+        st.session_state.selected_content_card = None
+
+    for r_start in range(0, len(content_cards), 3):
+        r_cols = st.columns(3)
+        for c_pos, c_info in enumerate(content_cards[r_start : r_start + 3]):
+            is_sel = st.session_state.selected_content_card == c_info["key"]
+            border_col = TEAL if c_info["accent"] == "teal" else PURPLE_LIGHT
+            sel_ring = f"box-shadow: 0 0 0 2px {border_col};" if is_sel else ""
+            with r_cols[c_pos]:
+                st.markdown(
+                    f"""
+                    <div class="criteria-card{'-purple' if c_info['accent']=='purple' else ''}" style="{sel_ring} min-height: 155px; margin-bottom: 0.45rem;">
+                        <div style="font-weight:700; color:{border_col}; font-size:1.0rem; margin-bottom:0.3rem;">{c_info['baslik']}</div>
+                        <div style="color:{TEXT_MUTED}; font-size:0.83rem; margin-bottom:0.5rem;">{c_info['aciklama']}</div>
+                        <div style="font-weight:600; color:{TEXT_LIGHT}; font-size:0.88rem; margin-bottom:0.25rem;">{c_info['gosterge']}</div>
+                        <div style="font-size:0.86rem; color:{POS_COLOR}; font-weight:700;">{c_info['durum']}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                btn_txt = "Kapat" if is_sel else "Detayı Aç"
+                if st.button(btn_txt, key=f"btn_{c_info['key']}", use_container_width=True):
+                    st.session_state.selected_content_card = None if is_sel else c_info["key"]
+                    st.rerun()
+
+    active_card = st.session_state.selected_content_card
+    if active_card == "card_1_softtech":
+        st.markdown("#### 1. Softtech Güçlü & Gelişim Alanları — Karşılaştırmalı Kırılım")
+        g_col, k_col = st.columns(2)
+        with g_col:
+            st.markdown("**✅ Güçlü Alanlar**")
+            pos_bullets = _cached_top_short_bullets(df_key, df_json, ("q02_guclu_yonler", "q01_calisma_hayati", "q09_vizyon_strateji"), top_n=4, direction="olumlu")
+            if not pos_bullets:
+                pos_bullets = _cached_top_short_bullets(df_key, df_json, ("q02_guclu_yonler", "q01_calisma_hayati"), top_n=4)
+            for b_item in pos_bullets:
+                st.markdown(f"- {b_item}")
+        with k_col:
+            st.markdown("**⚠️ Gelişime Açık Alanlar**")
+            neg_bullets = _cached_top_short_bullets(df_key, df_json, ("q10_degistirmek_istenen", "q04_ekip_iyilestirme", "q02_guclu_yonler"), top_n=4, direction="olumsuz")
+            for b_item in neg_bullets:
+                st.markdown(f"- {b_item}")
+    elif active_card == "card_2_karar":
+        st.markdown("#### 2. Karar Alma Süreçleri & Strateji — Öne Çıkan Yorumlar")
+        for b_item in _cached_top_short_bullets(df_key, df_json, ("q15_karar_alma_surecleri", "q09_vizyon_strateji", "q08_gmy_iletisimi"), top_n=5):
+            st.markdown(f"- {b_item}")
+    elif active_card == "card_3_hibrit":
+        st.markdown("#### 3. Hibrit Ritmi — İlerisi İçin Tercih Edilen Çalışma Modeli (%)")
+        if hybrid_dist:
+            df_hyb = pd.DataFrame(hybrid_dist, columns=["Çalışma Modeli Tercihi", "Kişi Sayısı", "Oran (%)"])
+            st.dataframe(df_hyb, use_container_width=True, hide_index=True)
+            for m_ad, m_cnt, m_pct in hybrid_dist:
+                st.markdown(f"- **{m_ad}:** **%{m_pct:.1f}** ({m_cnt} yanıt)")
+        else:
+            st.info("Bu başlık için çalışma modeli yanıtı bulunamadı.")
+    elif active_card == "card_4_ucret":
+        st.markdown("#### 4. Ücret & Yan Haklar — En Çok Tekrar Eden Yorumlar")
+        for b_item in _cached_top_short_bullets(df_key, df_json, ("ik_ucret_merkezi", "q05_motivasyon_arttiran"), top_n=5):
+            st.markdown(f"- {b_item}")
+    elif active_card == "card_5_yz":
+        st.markdown("#### 5. Yapay Zeka Adaptasyonu — En Çok Tekrar Eden Yorumlar")
+        for b_item in _cached_top_short_bullets(df_key, df_json, ("q_kapanis", "q07_ym_verimlilik", "q13_harmony"), top_n=5):
+            st.markdown(f"- {b_item}")
+    elif active_card == "card_6_harmony":
+        st.markdown("#### 6. Harmony Adaptasyonu — En Çok Tekrar Eden Yorumlar")
+        for b_item in _cached_top_short_bullets(df_key, df_json, ("q13_harmony",), top_n=5):
+            st.markdown(f"- {b_item}")
+    elif active_card == "card_7_toplantilar":
+        st.markdown("#### 7. Toplandığımıza Değsin — En Çok Tekrar Eden Yorumlar")
+        for b_item in _cached_top_short_bullets(df_key, df_json, ("q14_toplandigimiza_degsin",), top_n=5):
+            st.markdown(f"- {b_item}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("👥 Ekip Değerlendirme Kriterleri (4 Başlık) & Öne Çıkan Yorumlar")
+    ekip_4_cards = _compute_4_team_criteria(df_view)
+    cols_4 = st.columns(4)
+    for idx_e, e_info in enumerate(ekip_4_cards):
+        cols_4[idx_e].markdown(
+            f"""
+            <div class="criteria-card">
+                <div style="font-weight:700; color:{TEAL}; font-size:0.96rem; margin-bottom:0.3rem;">{e_info['baslik']}</div>
+                <div style="color:{TEXT_MUTED}; font-size:0.82rem; margin-bottom:0.45rem;">{e_info['aciklama']}</div>
+                <div style="font-weight:600; font-size:0.88rem; margin-bottom:0.2rem;">{e_info['gosterge']}</div>
+                <div style="color:{PURPLE_LIGHT}; font-weight:700; font-size:0.88rem;">{e_info['durum']}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        st.markdown("**Öne Çıkan Olumlu Noktalar (En Çok Tekrar Eden)**")
+        for item in dept_res.get("olumlu") or ["Kayıtlı olumlu ifade bulunmuyor"]:
+            st.markdown(f"- {item}")
+    with d_col2:
+        st.markdown("**Öne Çıkan Olumsuz Noktalar (En Çok Tekrar Eden)**")
+        for item in dept_res.get("olumsuz") or ["Kayıtlı olumsuz ifade bulunmuyor"]:
+            st.markdown(f"- {item}")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📋 Birimler Arası Detaylı Değerlendirme & Yönetici İletişim Puanları")
+    birimler_all = dept_res.get("birimler") or []
+    aktif_birimler = [b for b in birimler_all if b.get("gorusme_sayisi", 0) > 0]
+
+    if aktif_birimler:
+        yon_table_rows = [
+            {
+                "Birim": b["birim"],
+                "Görüşme Sayısı": b["gorusme_sayisi"],
+                "1. Yönetici İletişimi Puanı (1-5)": b["yonetici_iletisim_puani"] if b["yonetici_iletisim_puani"] is not None else "-",
+                "Genel Durum": b["durum"],
+            }
+            for b in aktif_birimler
+        ]
+        st.dataframe(pd.DataFrame(yon_table_rows), use_container_width=True, hide_index=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📝 Birim Özelinde Tüm Yorumların Genel Metin Özeti")
+    gosterilecek_birimler = aktif_birimler if aktif_birimler else birimler_all[:8]
+    tum_birim_goster = st.checkbox(
+        f"Kayıt olmayan birimler dahil tüm birimleri göster ({len(birimler_all)} birim)",
+        value=False,
+        key=f"chk_all_units_{sel_gmy_f}",
+    )
+    if tum_birim_goster:
+        gosterilecek_birimler = birimler_all
+
+    for b_item in gosterilecek_birimler:
+        yon_badge = f" • Yönetici İletişimi: {b_item['yonetici_iletisim_puani']}/5.00" if b_item.get("yonetici_iletisim_puani") else ""
+        st.markdown(
+            f"""
+            <div class="detail-box">
+                <div style="font-weight:700; color:{TEAL}; margin-bottom:0.4rem;">
+                    {b_item['birim']} &nbsp;•&nbsp; {b_item['gorusme_sayisi']} Görüşme{yon_badge} &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{b_item['durum']}</span>
+                </div>
+                <div style="color:{TEXT_LIGHT}; line-height:1.55; margin-bottom:0.45rem;">{b_item.get('genel_ozet_metin', '')}</div>
+                <div style="font-size:0.88rem; color:{TEXT_MUTED};"><b>Olumlu Özet:</b> {" / ".join(b_item['olumlu'])}</div>
+                <div style="font-size:0.88rem; color:{TEXT_MUTED};"><b>Gelişim / Olumsuz Özet:</b> {" / ".join(b_item['olumsuz'])}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("🖨️ Tüm Birimlere Ait Verileri Ayrı Ayrı Detaylı Metin Halinde Görüntüle / Kopyala"):
+        detay_bloklar = []
+        for b_item in gosterilecek_birimler:
+            detay_bloklar.append(
+                f"=== {b_item['birim']} ({b_item['gorusme_sayisi']} Görüşme) ===\n"
+                f"Genel Değerlendirme:\n{b_item.get('genel_ozet_metin', '')}\n"
+                f"Öne Çıkan Olumlu Noktalar: {' ; '.join(b_item['olumlu'])}\n"
+                f"Öne Çıkan Olumsuz Noktalar: {' ; '.join(b_item['olumsuz'])}\n"
+            )
+        full_text_report = "\n".join(detay_bloklar)
+        st.text_area("Birim Bazlı Detaylı Metin Çıktısı", value=full_text_report, height=320)
+        st.download_button(
+            label="📄 Detaylı Birim Metin Raporunu İndir (.txt)",
+            data=full_text_report.encode("utf-8"),
+            file_name=f"Birim_Detayli_Metin_Raporu_{sel_donem_f.replace(' ', '_')}.txt",
+            mime="text/plain",
+        )
 
 
 if "user" not in st.session_state:
@@ -2930,700 +3595,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                     st.error(msg)
 
 elif sayfa == "İzlenim Paylaşım Görüşmeleri":
-    allowed_birimler = [b for b_list in assigned_gmy_map.values() for b in b_list]
-    df_scoped = df_all.copy()
-
-    st.markdown("#### 🔎 Detaylı Filtreleme")
-    f1, f2, f3, f4 = st.columns(4)
-    with f1:
-        sel_gmy_f = st.selectbox("Genel Müdür Yardımcılığı", ["Tümü"] + gmy_options)
-    with f2:
-        dept_vals = sorted(df_scoped["departman"].dropna().unique().tolist()) if "departman" in df_scoped.columns and not df_scoped.empty else DEPARTMAN_OPTIONS
-        sel_dept_f = st.selectbox("Departman", ["Tümü"] + dept_vals)
-    with f3:
-        if sel_gmy_f == "Tümü":
-            veri_birimler = sorted(df_scoped["birim"].dropna().unique().tolist()) if "birim" in df_scoped.columns and not df_scoped.empty else []
-            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(allowed_birimler + veri_birimler))
-        else:
-            veri_gmy_birimler = (
-                sorted(df_scoped[df_scoped["gmy"] == sel_gmy_f]["birim"].dropna().unique().tolist())
-                if "gmy" in df_scoped.columns and "birim" in df_scoped.columns and not df_scoped.empty
-                else []
-            )
-            birim_filter_opts = ["Tümü"] + list(dict.fromkeys(assigned_gmy_map.get(sel_gmy_f, []) + veri_gmy_birimler))
-        sel_birim_f = st.selectbox("Birim", birim_filter_opts)
-    with f4:
-        bolum_vals = sorted(df_scoped["bolum"].dropna().unique().tolist()) if "bolum" in df_scoped.columns and not df_scoped.empty else BOLUM_OPTIONS
-        sel_bolum_f = st.selectbox("Bölüm", ["Tümü"] + bolum_vals)
-
-    f5, f6, f7, f8 = st.columns(4)
-    with f5:
-        tarih_vals = sorted(df_scoped["gorusme_tarihi"].dropna().unique().tolist()) if "gorusme_tarihi" in df_scoped.columns and not df_scoped.empty else []
-        sel_tarih_f = st.selectbox("Görüşme Tarihi", ["Tümü"] + tarih_vals)
-    with f6:
-        donem_vals = sorted(df_scoped["donem"].dropna().unique().tolist()) if "donem" in df_scoped.columns and not df_scoped.empty else ["2026 - 2. Dönem"]
-        sel_donem_f = st.selectbox("Görüşme Dönemi", ["Tümü"] + donem_vals)
-    with f7:
-        ik_vals = sorted(df_scoped["ik_is_ortagi"].dropna().unique().tolist()) if "ik_is_ortagi" in df_scoped.columns and not df_scoped.empty else IK_IS_ORTAGI_OPTIONS
-        sel_ik_f = st.selectbox("İK İş Ortağı", ["Tümü"] + ik_vals)
-    with f8:
-        sel_lok_f = st.selectbox("Lokasyon", ["Tümü"] + LOKASYON_OPTIONS)
-
-    df_view = df_scoped.copy()
-    if not df_view.empty:
-        if sel_gmy_f != "Tümü" and "gmy" in df_view.columns:
-            df_view = df_view[df_view["gmy"] == sel_gmy_f]
-        if sel_dept_f != "Tümü" and "departman" in df_view.columns:
-            df_view = df_view[df_view["departman"] == sel_dept_f]
-        if sel_birim_f != "Tümü" and "birim" in df_view.columns:
-            df_view = df_view[df_view["birim"] == sel_birim_f]
-        if sel_bolum_f != "Tümü" and "bolum" in df_view.columns:
-            df_view = df_view[df_view["bolum"] == sel_bolum_f]
-        if sel_tarih_f != "Tümü" and "gorusme_tarihi" in df_view.columns:
-            df_view = df_view[df_view["gorusme_tarihi"] == sel_tarih_f]
-        if sel_donem_f != "Tümü" and "donem" in df_view.columns:
-            df_view = df_view[df_view["donem"] == sel_donem_f]
-        if sel_ik_f != "Tümü" and "ik_is_ortagi" in df_view.columns:
-            df_view = df_view[df_view["ik_is_ortagi"] == sel_ik_f]
-        if sel_lok_f != "Tümü" and "lokasyon" in df_view.columns:
-            df_view = df_view[df_view["lokasyon"] == sel_lok_f]
-
-    df_view = _normalize_scores_on_df(df_view)
-    mood_slot.markdown(render_corner_mood_widget(df_view, highlight_positive=True), unsafe_allow_html=True)
-
-    k1, k2, k3, k4 = st.columns(4)
-    puan_cols = [c for c, _ in PUAN_BASLIKLARI if c in df_view.columns]
-    genel_ort = (
-        round(float(df_view[puan_cols].apply(pd.to_numeric, errors="coerce").stack().mean()), 2)
-        if not df_view.empty and puan_cols and not df_view[puan_cols].apply(pd.to_numeric, errors="coerce").stack().empty
-        else 0.0
-    )
-
-    aksiyon_not_kayitlari = []
-    if not df_view.empty:
-        for idx_aks, r_aks in df_view.iterrows():
-            if str(r_aks.get("aksiyon_ihtiyaci", "")).strip() != "Evet":
-                continue
-            sic_no = str(r_aks.get("sicil_no", "") or "").strip()
-            not_txt = str(r_aks.get("aksiyon_notu", "") or "").strip() or AKSIYON_PLANI_MAP.get(sic_no, "")
-            if _has_meaningful_action_note(not_txt):
-                kisi_ad = str(r_aks.get("ad_soyad", "") or r_aks.get("calisan_rumuzu", "") or "Katılımcı").strip()
-                birim_ad = str(r_aks.get("birim", "") or "").strip()
-                gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
-                kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
-                done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
-                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or now_local().date().strftime("%d.%m.%Y")
-                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
-                aksiyon_not_kayitlari.append(
-                    {
-                        "kayit_id": kid_str,
-                        "sicil_no": sic_no,
-                        "kisi": f"{kisi_ad} ({sic_no})" if sic_no else kisi_ad,
-                        "birim": birim_ad,
-                        "tarih": gt_txt,
-                        "not": not_txt,
-                        "tamamlandi": is_done,
-                        "tamamlanma_tarihi": done_dt_str,
-                        "tamamlanma_notu": done_not_str,
-                    }
-                )
-
-    toplam_aksiyon_adet = len(aksiyon_not_kayitlari)
-    kapali_aksiyon_adet = sum(1 for x in aksiyon_not_kayitlari if x["tamamlandi"])
-    acik_aksiyon_adet = max(0, toplam_aksiyon_adet - kapali_aksiyon_adet)
-
-    olumsuz_adet = int((df_view["duygu_durumu"] == "Olumsuz").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
-    olumlu_adet = int((df_view["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in df_view.columns and not df_view.empty else 0
-    notr_adet = max(0, len(df_view) - olumlu_adet - olumsuz_adet)
-    olumsuz_sub = "Olumsuz kayıt yok" if olumsuz_adet == 0 else f"Olumsuz: {olumsuz_adet} kayıt"
-
-    for col_box, lbl, val, sub in [
-        (k1, "Toplam Görüşülen Kişi", str(len(df_view)), "Seçili filtre kapsamı"),
-        (k2, "Genel Puan Ortalaması", f"{genel_ort} / 5.00", "Buçuklu puanlar dahil"),
-        (k3, "Toplam Oluşan Aksiyon", str(toplam_aksiyon_adet), f"Açık: {acik_aksiyon_adet} • Kapalı: {kapali_aksiyon_adet}"),
-        (k4, "Duygu Dağılımı (Olumlu / Nötr)", f"{olumlu_adet} / {notr_adet}", olumsuz_sub),
-    ]:
-        col_box.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-label">{lbl}</div>
-                <div class="metric-value">{val}</div>
-                <div class="metric-sub">{sub}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    dept_res = _analyze_department_cached(_df_to_json_safe(df_view), sel_gmy_f)
-
-    exp_c1, exp_c2 = st.columns(2)
-    with exp_c1:
-        pptx_state_key = f"pptx_{_df_fingerprint(df_view)}_{sel_gmy_f}_{sel_donem_f}"
-        if st.button("📊 Sunumu Hazırla (.pptx)", use_container_width=True):
-            with st.spinner("Sunum oluşturuluyor..."):
-                st.session_state[pptx_state_key] = _cached_pptx_bytes(
-                    _df_fingerprint(df_view),
-                    _df_to_json_safe(df_view),
-                    sel_gmy_f,
-                    sel_donem_f,
-                )
-        if pptx_state_key in st.session_state:
-            st.download_button(
-                label="📥 Sunumu İndir (.pptx)",
-                data=st.session_state[pptx_state_key],
-                file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                use_container_width=True,
-            )
-
-    with exp_c2:
-        pdf_state_key = f"pdf_{_df_fingerprint(df_view)}_{sel_gmy_f}_{sel_donem_f}"
-        if st.button("📄 Raporu PDF Olarak Hazırla (.pdf)", use_container_width=True):
-            with st.spinner("PDF raporu oluşturuluyor..."):
-                st.session_state[pdf_state_key] = build_pdf_summary_report(df_view, sel_gmy_f, sel_donem_f, dept_res)
-        if pdf_state_key in st.session_state:
-            st.download_button(
-                label="📥 PDF Raporunu İndir (.pdf)",
-                data=st.session_state[pdf_state_key],
-                file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if df_view.empty:
-        st.info("Seçili filtrelere uygun görüşme kaydı bulunamadı.")
-    else:
-        st.subheader("📊 Aksiyon Durumu")
-        df_aks_durum = pd.DataFrame({
-            "Kategori": ["Kapalı Aksiyon", "Açık Aksiyon", "Toplam Aksiyon"],
-            "Adet": [kapali_aksiyon_adet, acik_aksiyon_adet, toplam_aksiyon_adet],
-        })
-        max_aks_x = max(5, int(toplam_aksiyon_adet * 1.18))
-        fig_aks = px.bar(
-            df_aks_durum,
-            x="Adet",
-            y="Kategori",
-            text="Adet",
-            orientation="h",
-            color="Kategori",
-            range_x=[0, max_aks_x],
-            color_discrete_map={
-                "Toplam Aksiyon": TEAL,
-                "Açık Aksiyon": PURPLE_LIGHT,
-                "Kapalı Aksiyon": POS_COLOR,
-            },
-        )
-        fig_aks.update_traces(
-            textposition="outside",
-            textfont=dict(size=13, color=TEXT_LIGHT),
-            cliponaxis=False,
-        )
-        fig_aks.update_layout(
-            paper_bgcolor=CARD_DARK,
-            plot_bgcolor=CARD_DARK,
-            font_color=TEXT_LIGHT,
-            showlegend=False,
-            xaxis_title="Aksiyon Adedi",
-            yaxis_title="",
-            height=230,
-            margin=dict(l=15, r=35, t=15, b=20),
-        )
-        st.plotly_chart(fig_aks, use_container_width=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if "aksiyon_gorunum_modu" not in st.session_state:
-            st.session_state.aksiyon_gorunum_modu = "acik"
-
-        acik_liste = [x for x in aksiyon_not_kayitlari if not x["tamamlandi"]]
-        kapali_liste = [x for x in aksiyon_not_kayitlari if x["tamamlandi"]]
-
-        st.markdown(
-            f"""
-            <div class="action-showcase-banner">
-                <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
-                    <div>
-                        <div style="font-size:1.25rem; font-weight:800; color:#F8FAFC; letter-spacing:-0.2px;">⚡ ÖNE ÇIKAN AKSİYON PLANI</div>
-                        <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Aşağıdaki görünümlerden Açık veya Kapatılan Aksiyonları seçerek detayları inceleyebilirsiniz</div>
-                    </div>
-                    <div style="background:rgba(167,139,250,0.2); border:1px solid rgba(167,139,250,0.6); color:#DDD6FE; font-weight:800; font-size:0.9rem; padding:0.35rem 0.75rem; border-radius:999px;">
-                        {acik_aksiyon_adet} Açık • {kapali_aksiyon_adet} Kapatılan ({toplam_aksiyon_adet} Toplam)
-                    </div>
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        btn_col_acik, btn_col_kapali = st.columns(2)
-        with btn_col_acik:
-            acik_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "acik" else ""
-            if st.button(f"📂 Açık Aksiyonlar ({acik_aksiyon_adet}){acik_aktif_tag}", key="btn_show_open_actions", use_container_width=True):
-                st.session_state.aksiyon_gorunum_modu = "acik"
-                st.rerun()
-        with btn_col_kapali:
-            kapali_aktif_tag = " [Aktif Görünüm]" if st.session_state.aksiyon_gorunum_modu == "kapali" else ""
-            if st.button(f"✅ Kapatılan Aksiyonlar ({kapali_aksiyon_adet}){kapali_aktif_tag}", key="btn_show_closed_actions", use_container_width=True):
-                st.session_state.aksiyon_gorunum_modu = "kapali"
-                st.rerun()
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        if st.session_state.aksiyon_gorunum_modu == "acik":
-            if acik_liste:
-                for item_aks in acik_liste:
-                    meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
-                    meta_str = " • ".join(meta_parcalar)
-                    uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
-                    chk_key = f"aks_done_chk_{uid_tag}"
-                    dt_key = f"aks_done_dt_{uid_tag}"
-                    nt_key = f"aks_done_nt_{uid_tag}"
-                    err_key = f"aks_done_err_{uid_tag}"
-                    reset_flag_key = f"aks_reset_chk_{uid_tag}"
-
-                    if st.session_state.pop(reset_flag_key, False):
-                        st.session_state[chk_key] = False
-                        st.session_state[nt_key] = ""
-
-                    if chk_key not in st.session_state:
-                        st.session_state[chk_key] = False
-                    if dt_key not in st.session_state:
-                        st.session_state[dt_key] = now_local().date()
-                    if nt_key not in st.session_state:
-                        st.session_state[nt_key] = ""
-
-                    row_txt_col, row_chk_col = st.columns([4.4, 1.3], vertical_alignment="top")
-                    with row_txt_col:
-                        st.markdown(
-                            f"""
-                            <div class="action-note-box">
-                                <div style="font-size:0.82rem; color:{TEAL}; font-weight:800; margin-bottom:0.3rem;">▸ {meta_str}</div>
-                                <div style="color:{TEXT_LIGHT}; font-size:0.98rem; font-weight:500; line-height:1.5;">{item_aks['not']}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                    with row_chk_col:
-                        st.checkbox("Tamamlandı", key=chk_key)
-
-                    if st.session_state.get(chk_key, False):
-                        with st.container():
-                            f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
-                            with f_dt_col:
-                                st.date_input("Kapatılma Tarihi", key=dt_key, format="DD.MM.YYYY")
-                            with f_nt_col:
-                                st.text_input(
-                                    "Nasıl Tamamlandı? (Kapatma Yorumu Zorunlu)",
-                                    key=nt_key,
-                                    placeholder="Örn: Yönetici ve İK ile görüşüldü, aksiyon hayata geçirildi.",
-                                )
-                            with f_btn_col:
-                                if st.button("Aksiyonu Kapat", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
-                                    note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
-                                    dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=now_local().date()).strftime("%d.%m.%Y")
-                                    if not _has_completion_note(note_input_val):
-                                        st.session_state[reset_flag_key] = True
-                                        st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon kapatılamaz!"
-                                        st.rerun()
-                                    else:
-                                        st.session_state.pop(err_key, None)
-                                        st.session_state[reset_flag_key] = True
-                                        update_action_completion_record(
-                                            kayit_id=item_aks["kayit_id"],
-                                            sicil_no=item_aks["sicil_no"],
-                                            completed=True,
-                                            completion_date=dt_input_val,
-                                            completion_note=note_input_val,
-                                        )
-                                        st.session_state.aksiyon_gorunum_modu = "kapali"
-                                        st.rerun()
-
-                            if st.session_state.get(err_key):
-                                st.warning(st.session_state[err_key])
-            else:
-                st.info("Seçili filtre kapsamında açık aksiyon bulunmuyor.")
-        else:
-            if kapali_liste:
-                for item_aks in kapali_liste:
-                    meta_parcalar = [p for p in [item_aks["kisi"], item_aks["birim"], item_aks["tarih"]] if p]
-                    meta_str = " • ".join(meta_parcalar)
-                    uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
-                    kapatilma_tarihi = item_aks["tamamlanma_tarihi"] or now_local().date().strftime("%d.%m.%Y")
-                    kapatma_yorumu = item_aks["tamamlanma_notu"] or "-"
-
-                    c_card, c_reopen = st.columns([4.5, 1.2], vertical_alignment="center")
-                    with c_card:
-                        st.markdown(
-                            f"""
-                            <div class="action-note-box-done">
-                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem; margin-bottom:0.35rem;">
-                                    <span style="font-size:0.84rem; color:#34D399; font-weight:800;">✓ KAPATILDI • {meta_str}</span>
-                                    <span style="background:rgba(16,185,129,0.18); border:1px solid rgba(16,185,129,0.5); color:#6EE7B7; font-size:0.82rem; font-weight:700; padding:0.15rem 0.6rem; border-radius:999px;">
-                                        Kapatılma Tarihi: {kapatilma_tarihi}
-                                    </span>
-                                </div>
-                                <div style="color:{TEXT_LIGHT}; font-size:0.96rem; font-weight:500; line-height:1.5; margin-bottom:0.5rem;">{item_aks['not']}</div>
-                                <div style="padding-top:0.45rem; border-top:1px dashed rgba(52,211,153,0.35); font-size:0.9rem; color:#A7F3D0;">
-                                    <b>Kapatma Yorumu / Nasıl Tamamlandı:</b> {kapatma_yorumu}
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
-                    with c_reopen:
-                        if st.button("↩ Yeniden Aç", key=f"reopen_aks_{uid_tag}", use_container_width=True):
-                            st.session_state[f"aks_reset_chk_{uid_tag}"] = True
-                            update_action_completion_record(
-                                kayit_id=item_aks["kayit_id"],
-                                sicil_no=item_aks["sicil_no"],
-                                completed=False,
-                                completion_date="",
-                                completion_note="",
-                            )
-                            st.rerun()
-            else:
-                st.info("Henüz kapatılan bir aksiyon bulunmuyor.")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📈 İzlenim Paylaşım Puanlaması — 2025 vs 2026 Karşılaştırması")
-
-        def _col_avg(col_k):
-            s = pd.to_numeric(df_view[col_k], errors="coerce").dropna() if col_k in df_view.columns else pd.Series(dtype=float)
-            return round(float(s.mean()), 2) if not s.empty else 0.0
-
-        comp_rows = [
-            {"Kriter": "Genel Memnuniyet / Aidiyet", "2025 Sonuçları": 4.10, "2026 Sonuçları": _col_avg("p_genel_memnuniyet")},
-            {"Kriter": "Ücret Motivasyonu", "2025 Sonuçları": 3.40, "2026 Sonuçları": _col_avg("p_ucret_yan_hak")},
-            {"Kriter": "Ekip Motivasyonu", "2025 Sonuçları": 3.50, "2026 Sonuçları": _col_avg("p_ekip_motivasyonu")},
-            {"Kriter": "Kendi Motivasyonu", "2025 Sonuçları": 3.70, "2026 Sonuçları": _col_avg("p_kendi_motivasyonu")},
-            {"Kriter": "İş-Yaşam Dengesi", "2025 Sonuçları": 3.80, "2026 Sonuçları": _col_avg("p_is_yasam_dengesi")},
-            {"Kriter": "Direktörüyle İletişim", "2025 Sonuçları": 3.40, "2026 Sonuçları": _col_avg("p_direktor_iletisimi")},
-            {"Kriter": "Üst Yönetim (GMY) İletişimi", "2025 Sonuçları": 3.80, "2026 Sonuçları": _col_avg("p_gmy_iletisimi")},
-        ]
-        df_comp = pd.DataFrame(comp_rows)
-        df_comp["Fark (2026 - 2025)"] = (df_comp["2026 Sonuçları"] - df_comp["2025 Sonuçları"]).round(2)
-
-        c_tbl, c_grp = st.columns([1.1, 1.3])
-        with c_tbl:
-            st.dataframe(df_comp, use_container_width=True, hide_index=True)
-        with c_grp:
-            df_melt = df_comp.melt(id_vars="Kriter", value_vars=["2025 Sonuçları", "2026 Sonuçları"], var_name="Yıl", value_name="Puan")
-            fig_comp = px.bar(
-                df_melt,
-                x="Puan",
-                y="Kriter",
-                color="Yıl",
-                barmode="group",
-                orientation="h",
-                range_x=[0, 5],
-                color_discrete_map={"2025 Sonuçları": PURPLE_LIGHT, "2026 Sonuçları": TEAL},
-            )
-            fig_comp.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, height=310, margin=dict(l=10, r=10, t=15, b=15))
-            st.plotly_chart(fig_comp, use_container_width=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("İzlenim Paylaşım Değerlendirme – İçerik")
-
-        def _mean_metric(col_name: str):
-            if df_view.empty or col_name not in df_view.columns:
-                return None
-            s_num = pd.to_numeric(df_view[col_name], errors="coerce").dropna()
-            return round(float(s_num.mean()), 2) if not s_num.empty else None
-
-        def _face_badge(score):
-            if score is None:
-                return "😐 Veri Yok"
-            if score >= 4.0:
-                return "😄 Güçlü / Memnun"
-            if score >= 3.2:
-                return "🙂 Dengeli / İyi"
-            return "😟 İyileştirme Gerekli"
-
-        def _top_short_bullets(cols: list[str], top_n: int = 4, direction: str | None = None) -> list[str]:
-            recs = []
-            for p_idx, (_, r_item) in enumerate(df_view.iterrows()):
-                r_duygu = str(r_item.get("duygu_durumu", "") or "")
-                for c_key in cols:
-                    if c_key not in df_view.columns:
-                        continue
-                    raw_v = r_item.get(c_key, "")
-                    if pd.isna(raw_v) or not str(raw_v).strip():
-                        continue
-                    def_dir = "olumsuz" if c_key in ("q04_ekip_iyilestirme", "q10_degistirmek_istenen") else "olumlu"
-                    for cl in split_clauses(str(raw_v)):
-                        cl_dir = classify_clause(cl, r_duygu, default_dir=def_dir)
-                        if direction is None or cl_dir == direction:
-                            recs.append((p_idx, cl))
-            return cluster_similar_statements(recs, top_n=top_n)
-
-        def _hybrid_model_percentages() -> list[tuple[str, int, float]]:
-            if df_view.empty or "q12_ilerisi_calisma_modeli" not in df_view.columns:
-                return []
-            buckets = Counter()
-            total_ans = 0
-            for val in df_view["q12_ilerisi_calisma_modeli"].dropna():
-                txt = str(val).strip()
-                if not txt:
-                    continue
-                total_ans += 1
-                low = tr_lower(txt)
-                if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış"]):
-                    buckets["Tam Uzaktan / Evden"] += 1
-                elif any(k in low for k in ["ofis", "tam zamanlı ofis", "her gün ofis"]):
-                    buckets["Ofis Ağırlıklı / Tam Ofis"] += 1
-                elif any(k in low for k in ["hibrit", "esnek", "gün", "haftada", "uzaktan", "denge"]):
-                    buckets["Hibrit / Esnek Model"] += 1
-                else:
-                    buckets["Diğer / Koşullu Görüş"] += 1
-            if total_ans == 0:
-                return []
-            ordered = []
-            for b_name, b_cnt in buckets.most_common():
-                pct = round((b_cnt / total_ans) * 100, 1)
-                ordered.append((b_name, b_cnt, pct))
-            return ordered
-
-        mem_val = _mean_metric("p_genel_memnuniyet")
-        gmy_val = _mean_metric("p_gmy_iletisimi")
-        ucret_val = _mean_metric("p_ucret_yan_hak")
-        yz_val = _mean_metric("p_yz_kullanim")
-
-        hybrid_dist = _hybrid_model_percentages()
-        hybrid_summary_txt = (
-            " • ".join([f"{b_n}: %{p_v:.1f}" for b_n, _, p_v in hybrid_dist[:3]])
-            if hybrid_dist
-            else "Yanıt dağılımı için detay açın"
-        )
-
-        content_cards = [
-            {
-                "key": "card_1_softtech",
-                "baslik": "1. Softtech Güçlü & Gelişim Alanları",
-                "aciklama": "Şirketin güçlü ve gelişime açık yönleri",
-                "gosterge": f"Genel Memnuniyet: {mem_val if mem_val is not None else '-'}/5.00",
-                "durum": _face_badge(mem_val),
-                "accent": "teal",
-            },
-            {
-                "key": "card_2_karar",
-                "baslik": "2. Karar Alma Süreçleri & Strateji",
-                "aciklama": "Karar alma hızı ve üst yönetim strateji süreçleri",
-                "gosterge": f"GMY İletişimi: {gmy_val if gmy_val is not None else '-'}/5.00",
-                "durum": _face_badge(gmy_val),
-                "accent": "purple",
-            },
-            {
-                "key": "card_3_hibrit",
-                "baslik": "3. Hibrit Ritmi",
-                "aciklama": "İlerisi için tercih edilen çalışma modeli dağılımı",
-                "gosterge": hybrid_summary_txt,
-                "durum": "📊 Yüzdelik Dağılım",
-                "accent": "teal",
-            },
-            {
-                "key": "card_4_ucret",
-                "baslik": "4. Ücret & Yan Haklar",
-                "aciklama": "Ücret, prim, yan haklar ve çalışan merkezi yorumları",
-                "gosterge": f"Ücret/Yan Hak: {ucret_val if ucret_val is not None else '-'}/5.00",
-                "durum": _face_badge(ucret_val),
-                "accent": "purple",
-            },
-            {
-                "key": "card_5_yz",
-                "baslik": "5. Yapay Zeka Adaptasyonu",
-                "aciklama": "CodeMantis, Amigo ve Asistan kullanım düzeyi",
-                "gosterge": f"YZ Kullanım Sıklığı: {yz_val if yz_val is not None else '-'}/5.00",
-                "durum": _face_badge(yz_val),
-                "accent": "teal",
-            },
-            {
-                "key": "card_6_harmony",
-                "baslik": "6. Harmony Adaptasyonu",
-                "aciklama": "Departmanın Harmony ve karne süreçlerine uyumu",
-                "gosterge": "Harmony & karne geri bildirimleri",
-                "durum": "🔄 Süreç Görünümü",
-                "accent": "purple",
-            },
-            {
-                "key": "card_7_toplantilar",
-                "baslik": "7. Toplandığımıza Değsin",
-                "aciklama": "Toplantı verimlilik hassasiyeti ve tutumu",
-                "gosterge": "Toplantı verimliliği değerlendirmeleri",
-                "durum": "⏱️ Verimlilik Görünümü",
-                "accent": "teal",
-            },
-        ]
-
-        if "selected_content_card" not in st.session_state:
-            st.session_state.selected_content_card = None
-
-        for r_start in range(0, len(content_cards), 3):
-            r_cols = st.columns(3)
-            for c_pos, c_info in enumerate(content_cards[r_start : r_start + 3]):
-                is_sel = st.session_state.selected_content_card == c_info["key"]
-                border_col = TEAL if c_info["accent"] == "teal" else PURPLE_LIGHT
-                sel_ring = f"box-shadow: 0 0 0 2px {border_col};" if is_sel else ""
-                with r_cols[c_pos]:
-                    st.markdown(
-                        f"""
-                        <div class="criteria-card{'-purple' if c_info['accent']=='purple' else ''}" style="{sel_ring} min-height: 155px; margin-bottom: 0.45rem;">
-                            <div style="font-weight:700; color:{border_col}; font-size:1.0rem; margin-bottom:0.3rem;">{c_info['baslik']}</div>
-                            <div style="color:{TEXT_MUTED}; font-size:0.83rem; margin-bottom:0.5rem;">{c_info['aciklama']}</div>
-                            <div style="font-weight:600; color:{TEXT_LIGHT}; font-size:0.88rem; margin-bottom:0.25rem;">{c_info['gosterge']}</div>
-                            <div style="font-size:0.86rem; color:{POS_COLOR}; font-weight:700;">{c_info['durum']}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                    btn_txt = "Kapat" if is_sel else "Detayı Aç"
-                    if st.button(btn_txt, key=f"btn_{c_info['key']}", use_container_width=True):
-                        st.session_state.selected_content_card = None if is_sel else c_info["key"]
-                        st.rerun()
-
-        active_card = st.session_state.selected_content_card
-        if active_card == "card_1_softtech":
-            st.markdown("#### 1. Softtech Güçlü & Gelişim Alanları — Karşılaştırmalı Kırılım")
-            g_col, k_col = st.columns(2)
-            with g_col:
-                st.markdown("**✅ Güçlü Alanlar**")
-                pos_bullets = _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati", "q09_vizyon_strateji"], top_n=4, direction="olumlu")
-                if not pos_bullets:
-                    pos_bullets = _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati"], top_n=4)
-                for b_item in pos_bullets:
-                    st.markdown(f"- {b_item}")
-            with k_col:
-                st.markdown("**⚠️ Gelişime Açık Alanlar**")
-                neg_bullets = _top_short_bullets(["q10_degistirmek_istenen", "q04_ekip_iyilestirme", "q02_guclu_yonler"], top_n=4, direction="olumsuz")
-                for b_item in neg_bullets:
-                    st.markdown(f"- {b_item}")
-
-        elif active_card == "card_2_karar":
-            st.markdown("#### 2. Karar Alma Süreçleri & Strateji — Öne Çıkan Yorumlar")
-            for b_item in _top_short_bullets(["q15_karar_alma_surecleri", "q09_vizyon_strateji", "q08_gmy_iletisimi"], top_n=5):
-                st.markdown(f"- {b_item}")
-
-        elif active_card == "card_3_hibrit":
-            st.markdown("#### 3. Hibrit Ritmi — İlerisi İçin Tercih Edilen Çalışma Modeli (%)")
-            if hybrid_dist:
-                df_hyb = pd.DataFrame(hybrid_dist, columns=["Çalışma Modeli Tercihi", "Kişi Sayısı", "Oran (%)"])
-                st.dataframe(df_hyb, use_container_width=True, hide_index=True)
-                for m_ad, m_cnt, m_pct in hybrid_dist:
-                    st.markdown(f"- **{m_ad}:** **%{m_pct:.1f}** ({m_cnt} yanıt)")
-            else:
-                st.info("Bu başlık için çalışma modeli yanıtı bulunamadı.")
-
-        elif active_card == "card_4_ucret":
-            st.markdown("#### 4. Ücret & Yan Haklar — En Çok Tekrar Eden Yorumlar")
-            for b_item in _top_short_bullets(["ik_ucret_merkezi", "q05_motivasyon_arttiran"], top_n=5):
-                st.markdown(f"- {b_item}")
-
-        elif active_card == "card_5_yz":
-            st.markdown("#### 5. Yapay Zeka Adaptasyonu — En Çok Tekrar Eden Yorumlar")
-            for b_item in _top_short_bullets(["q_kapanis", "q07_ym_verimlilik", "q13_harmony"], top_n=5):
-                st.markdown(f"- {b_item}")
-
-        elif active_card == "card_6_harmony":
-            st.markdown("#### 6. Harmony Adaptasyonu — En Çok Tekrar Eden Yorumlar")
-            for b_item in _top_short_bullets(["q13_harmony"], top_n=5):
-                st.markdown(f"- {b_item}")
-
-        elif active_card == "card_7_toplantilar":
-            st.markdown("#### 7. Toplandığımıza Değsin — En Çok Tekrar Eden Yorumlar")
-            for b_item in _top_short_bullets(["q14_toplandigimiza_degsin"], top_n=5):
-                st.markdown(f"- {b_item}")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("👥 Ekip Değerlendirme Kriterleri (4 Başlık) & Öne Çıkan Yorumlar")
-        ekip_4_cards = _compute_4_team_criteria(df_view)
-        cols_4 = st.columns(4)
-        for idx_e, e_info in enumerate(ekip_4_cards):
-            cols_4[idx_e].markdown(
-                f"""
-                <div class="criteria-card">
-                    <div style="font-weight:700; color:{TEAL}; font-size:0.96rem; margin-bottom:0.3rem;">{e_info['baslik']}</div>
-                    <div style="color:{TEXT_MUTED}; font-size:0.82rem; margin-bottom:0.45rem;">{e_info['aciklama']}</div>
-                    <div style="font-weight:600; font-size:0.88rem; margin-bottom:0.2rem;">{e_info['gosterge']}</div>
-                    <div style="color:{PURPLE_LIGHT}; font-weight:700; font-size:0.88rem;">{e_info['durum']}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        d_col1, d_col2 = st.columns(2)
-        with d_col1:
-            st.markdown("**Öne Çıkan Olumlu Noktalar (En Çok Tekrar Eden)**")
-            for item in dept_res.get("olumlu") or ["Kayıtlı olumlu ifade bulunmuyor"]:
-                st.markdown(f"- {item}")
-        with d_col2:
-            st.markdown("**Öne Çıkan Olumsuz Noktalar (En Çok Tekrar Eden)**")
-            for item in dept_res.get("olumsuz") or ["Kayıtlı olumsuz ifade bulunmuyor"]:
-                st.markdown(f"- {item}")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📋 Birimler Arası Detaylı Değerlendirme & Yönetici İletişim Puanları")
-        birimler_all = dept_res.get("birimler") or []
-        aktif_birimler = [b for b in birimler_all if b.get("gorusme_sayisi", 0) > 0]
-
-        if aktif_birimler:
-            yon_table_rows = [
-                {
-                    "Birim": b["birim"],
-                    "Görüşme Sayısı": b["gorusme_sayisi"],
-                    "1. Yönetici İletişimi Puanı (1-5)": b["yonetici_iletisim_puani"] if b["yonetici_iletisim_puani"] is not None else "-",
-                    "Genel Durum": b["durum"],
-                }
-                for b in aktif_birimler
-            ]
-            st.dataframe(pd.DataFrame(yon_table_rows), use_container_width=True, hide_index=True)
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("📝 Birim Özelinde Tüm Yorumların Genel Metin Özeti")
-        gosterilecek_birimler = aktif_birimler if aktif_birimler else birimler_all[:8]
-        tum_birim_goster = st.checkbox(
-            f"Kayıt olmayan birimler dahil tüm birimleri göster ({len(birimler_all)} birim)",
-            value=False,
-            key=f"chk_all_units_{sel_gmy_f}",
-        )
-        if tum_birim_goster:
-            gosterilecek_birimler = birimler_all
-
-        for b_item in gosterilecek_birimler:
-            yon_badge = f" • Yönetici İletişimi: {b_item['yonetici_iletisim_puani']}/5.00" if b_item.get("yonetici_iletisim_puani") else ""
-            st.markdown(
-                f"""
-                <div class="detail-box">
-                    <div style="font-weight:700; color:{TEAL}; margin-bottom:0.4rem;">
-                        {b_item['birim']} &nbsp;•&nbsp; {b_item['gorusme_sayisi']} Görüşme{yon_badge} &nbsp;•&nbsp; <span style="color:{PURPLE_LIGHT};">{b_item['durum']}</span>
-                    </div>
-                    <div style="color:{TEXT_LIGHT}; line-height:1.55; margin-bottom:0.45rem;">{b_item.get('genel_ozet_metin', '')}</div>
-                    <div style="font-size:0.88rem; color:{TEXT_MUTED};"><b>Olumlu Özet:</b> {" / ".join(b_item['olumlu'])}</div>
-                    <div style="font-size:0.88rem; color:{TEXT_MUTED};"><b>Gelişim / Olumsuz Özet:</b> {" / ".join(b_item['olumsuz'])}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("🖨️ Tüm Birimlere Ait Verileri Ayrı Ayrı Detaylı Metin Halinde Görüntüle / Kopyala"):
-            detay_bloklar = []
-            for b_item in gosterilecek_birimler:
-                detay_bloklar.append(
-                    f"=== {b_item['birim']} ({b_item['gorusme_sayisi']} Görüşme) ===\n"
-                    f"Genel Değerlendirme:\n{b_item.get('genel_ozet_metin', '')}\n"
-                    f"Öne Çıkan Olumlu Noktalar: {' ; '.join(b_item['olumlu'])}\n"
-                    f"Öne Çıkan Olumsuz Noktalar: {' ; '.join(b_item['olumsuz'])}\n"
-                )
-            full_text_report = "\n".join(detay_bloklar)
-            st.text_area("Birim Bazlı Detaylı Metin Çıktısı", value=full_text_report, height=320)
-            st.download_button(
-                label="📄 Detaylı Birim Metin Raporunu İndir (.txt)",
-                data=full_text_report.encode("utf-8"),
-                file_name=f"Birim_Detayli_Metin_Raporu_{sel_donem_f.replace(' ', '_')}.txt",
-                mime="text/plain",
-            )
+    render_izlenim_paylasim_module(df_all, assigned_gmy_map, gmy_options, mood_slot)
 
 else:
     st.subheader("Kayıt Havuzu")
