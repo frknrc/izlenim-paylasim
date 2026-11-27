@@ -74,6 +74,19 @@ st.markdown(
         ul[role="menu"] * {{
             color: {TEXT_LIGHT} !important;
         }}
+        [data-baseweb="popover"],
+        [data-baseweb="popover"] > div,
+        [data-baseweb="menu"],
+        [role="menu"],
+        [role="menuitem"],
+        [role="menuitemradio"] {{
+            background-color: {CARD_DARK} !important;
+            color: {TEXT_LIGHT} !important;
+        }}
+        [data-baseweb="popover"] *,
+        [role="menu"] * {{
+            color: {TEXT_LIGHT} !important;
+        }}
         [data-testid="stSidebar"] {{
             background-color: {CARD_DARK} !important;
             border-right: 1px solid {CARD_BORDER};
