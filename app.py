@@ -1,4 +1,3 @@
-import base64
 from collections import Counter
 from datetime import date, datetime
 import io
@@ -11,7 +10,6 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
@@ -42,7 +40,6 @@ NEG_COLOR = "#F87171"
 st.markdown(
     f"""
     <style>
-        /* Ana arka plan ve genel metin rengini her tema modunda (System / Light / Dark) sabitle */
         .stApp,
         [data-testid="stAppViewContainer"],
         [data-testid="stMain"] {{
@@ -58,7 +55,6 @@ st.markdown(
             color: {TEXT_LIGHT} !important;
             fill: {TEXT_LIGHT} !important;
         }}
-        /* Sağ üst 3 nokta açılır menüsü (System / Light / Dark / Print) okunurluğu */
         [data-testid="stPopover"] > div,
         [data-testid="stPopoverBody"],
         div[role="dialog"],
@@ -92,14 +88,13 @@ st.markdown(
             border-right: 1px solid {CARD_BORDER};
             color: {TEXT_LIGHT} !important;
         }}
-        /* Form etiketleri, başlıklar ve genel paragraf metinleri */
         .stApp label,
         .stApp label p,
         .stApp [data-testid="stWidgetLabel"] p,
         .stApp [data-testid="stMarkdownContainer"] p,
         .stApp [data-testid="stMarkdownContainer"] li,
         .stApp [data-testid="stCaptionContainer"],
-        .stApp h1, .stApp h2, .stApp h3, .stApp h4 {{
+        .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5 {{
             color: {TEXT_LIGHT} !important;
         }}
         .stApp code {{
@@ -107,46 +102,47 @@ st.markdown(
             color: {TEAL} !important;
             border: 1px solid {CARD_BORDER};
         }}
-        /* Form kapsayıcı kenarlığı */
         [data-testid="stForm"] {{
             background-color: {CARD_DARK} !important;
             border: 1px solid {CARD_BORDER} !important;
             border-radius: 12px;
             padding: 1.25rem;
         }}
-        /* Giriş kutuları ve placeholder metinleri */
+        /* Tüm giriş kutularını (text_input, selectbox, date_input) birebir aynı görünümde hizala */
         .stTextInput > div > div > input,
         .stTextArea > div > div > textarea,
         .stSelectbox > div > div > div,
         .stMultiSelect > div > div > div,
         .stNumberInput > div > div > input,
+        div[data-testid="stDateInput"] > div > div,
         div[data-testid="stDateInput"] input {{
             background-color: #0F172A !important;
             color: {TEXT_LIGHT} !important;
             -webkit-text-fill-color: {TEXT_LIGHT} !important;
             border-color: {CARD_BORDER} !important;
+            border-radius: 8px !important;
+            min-height: 40px !important;
         }}
         .stTextInput input::placeholder,
-        .stTextArea textarea::placeholder {{
+        .stTextArea textarea::placeholder,
+        div[data-testid="stDateInput"] input::placeholder {{
             color: {TEXT_MUTED} !important;
             -webkit-text-fill-color: {TEXT_MUTED} !important;
             opacity: 1 !important;
         }}
-        /* Streamlit metin kutularındaki varsayılan İngilizce 'Press Enter to apply' ipucunu gizle */
         div[data-testid="stTextInput"] div[data-testid="InputInstructions"] {{
             display: none !important;
         }}
-        /* Tarih kutusunu diğer kutularla aynı sütun genişliğine eşitle */
         div[data-testid="stDateInput"],
         div[data-testid="stDateInput"] > div,
         div[data-testid="stDateInput"] > div > div {{
             width: 100% !important;
             max-width: 100% !important;
         }}
-        div[data-testid="stDateInput"] input {{
-            width: 100% !important;
+        div[data-testid="stDateInput"] svg {{
+            color: {TEXT_MUTED} !important;
+            fill: {TEXT_MUTED} !important;
         }}
-        /* Butonlar (Form içi submit butonları dahil) */
         .stButton > button,
         .stDownloadButton > button,
         [data-testid="stFormSubmitButton"] > button {{
@@ -163,21 +159,21 @@ st.markdown(
             opacity: 0.92;
             color: #FFFFFF !important;
         }}
-        /* Üst başlık ve sağ duygu kutusu için eşit yükseklik ve hizalama */
+        /* Üst başlık ve sağ duygu kutusu için orantılı yükseklik ve yerleşim */
         .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
             border: 1px solid {CARD_BORDER};
             border-left: 5px solid {TEAL};
             border-radius: 12px;
-            padding: 1rem 1.4rem;
-            height: 136px;
+            padding: 0.95rem 1.3rem;
+            height: 124px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: center;
         }}
         .panel-brand {{
-            font-size: 1.45rem;
+            font-size: 1.38rem;
             font-weight: 800;
             letter-spacing: -0.5px;
             color: {TEXT_LIGHT};
@@ -192,8 +188,8 @@ st.markdown(
             background: linear-gradient(145deg, #131E33 0%, #171933 100%);
             border: 1px solid {CARD_BORDER};
             border-radius: 12px;
-            padding: 0.9rem 1.15rem;
-            height: 136px;
+            padding: 0.8rem 1.05rem;
+            height: 124px;
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
@@ -202,13 +198,13 @@ st.markdown(
         .mood-top-row {{
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.65rem;
         }}
         .mood-svg-wrap {{
-            width: 46px;
-            height: 46px;
+            width: 40px;
+            height: 40px;
             flex-shrink: 0;
-            border-radius: 12px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -216,31 +212,31 @@ st.markdown(
             border: 1px solid rgba(148, 163, 184, 0.2);
         }}
         .mood-title {{
-            font-size: 0.96rem;
+            font-size: 0.92rem;
             font-weight: 800;
-            line-height: 1.2;
+            line-height: 1.15;
         }}
         .mood-sub {{
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: {TEXT_MUTED};
-            margin-top: 0.15rem;
+            margin-top: 0.12rem;
         }}
         .mood-pct-row {{
             display: flex;
             justify-content: space-between;
-            gap: 0.4rem;
-            margin-top: 0.65rem;
-            font-size: 0.74rem;
+            gap: 0.35rem;
+            margin-top: 0.45rem;
+            font-size: 0.72rem;
             font-weight: 600;
         }}
         .mood-bar-track {{
             width: 100%;
-            height: 7px;
+            height: 6px;
             border-radius: 999px;
             overflow: hidden;
             display: flex;
             background: #0F172A;
-            margin-top: 0.35rem;
+            margin-top: 0.28rem;
             border: 1px solid rgba(148, 163, 184, 0.15);
         }}
         .metric-card {{
@@ -288,7 +284,7 @@ st.markdown(
             border-radius: 10px;
             padding: 0.95rem 1.05rem;
             margin-bottom: 0.75rem;
-            min-height: 175px;
+            min-height: 165px;
         }}
         .criteria-card-purple {{
             background-color: {CARD_DARK};
@@ -297,7 +293,7 @@ st.markdown(
             border-radius: 10px;
             padding: 0.95rem 1.05rem;
             margin-bottom: 0.75rem;
-            min-height: 175px;
+            min-height: 165px;
         }}
     </style>
     """,
@@ -306,10 +302,9 @@ st.markdown(
 
 
 def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
-    """Ana ekranın sağ üst köşesinde genel duygu ifadesi ve altında yüzde dağılımı gösterir."""
     if df_source is None or df_source.empty or "duygu_durumu" not in df_source.columns:
         svg_empty = f"""
-        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" stroke="{TEXT_MUTED}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
             <circle cx="23" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
@@ -349,7 +344,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = POS_COLOR
         vurgu_yuzde = pos_pct
         svg_face = f"""
-        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(16, 185, 129, 0.16)" stroke="{POS_COLOR}" stroke-width="2.2"/>
             <circle cx="13" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
             <circle cx="23" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
@@ -361,7 +356,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = NEG_COLOR
         vurgu_yuzde = neg_pct
         svg_face = f"""
-        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(248, 113, 113, 0.16)" stroke="{NEG_COLOR}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.9" fill="{NEG_COLOR}"/>
             <circle cx="23" cy="15" r="1.9" fill="{NEG_COLOR}"/>
@@ -373,7 +368,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = TEAL
         vurgu_yuzde = neu_pct
         svg_face = f"""
-        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="28" height="28" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(34, 211, 238, 0.14)" stroke="{TEAL}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.9" fill="{TEAL}"/>
             <circle cx="23" cy="15" r="1.9" fill="{TEAL}"/>
@@ -386,7 +381,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         <div class="mood-top-row">
             <div class="mood-svg-wrap">{svg_face}</div>
             <div>
-                <div class="mood-title" style="color:{durum_renk};">{durum_baslik} <span style="color:{TEXT_LIGHT}; font-size:0.88rem;">(%{vurgu_yuzde:.1f})</span></div>
+                <div class="mood-title" style="color:{durum_renk};">{durum_baslik} <span style="color:{TEXT_LIGHT}; font-size:0.84rem;">(%{vurgu_yuzde:.1f})</span></div>
                 <div class="mood-sub">{total} görüşme üzerinden dağılım</div>
             </div>
         </div>
@@ -707,31 +702,6 @@ def render_synced_score_row(p_key: str, p_label: str, default_val: float | None,
 
     return st.session_state[state_key]
 
-
-HISTORICAL_2025_BENCHMARKS = {
-    "Softtech'e Aidiyet / Genel Memnuniyet": 4.1,
-    "Ücret Motivasyonu": 3.4,
-    "Ekip Motivasyonu": 3.5,
-    "Kendi Motivasyonu": 3.7,
-    "İş-Yaşam Dengesi": 3.8,
-    "Direktörüyle İletişim": 3.4,
-    "Üst Yönetim (GMY) İletişimi": 3.8,
-}
-
-ANA_TEMALAR = [
-    "Güven ve Kültür",
-    "Ulaşılabilir İK",
-    "İş Tatmini",
-    "Yetkinlik Merkezi Yapısı",
-    "Harmony ve Karne Etkisi",
-    "Karar Süreçleri ve Bilgi Akışı",
-    "Prim, Ücret Artışları ve Terfi",
-    "Yaşanan Yetki Sorunları",
-    "YZ ve BT Kaynaklı Kısıtlar",
-    "Üst Yönetim / Direktör İletişimi",
-    "Çalışma Modeli / Hibrit / İş-Yaşam",
-    "Diğer",
-]
 
 COLUMN_LABELS = {
     "kayit_id": "Kayıt ID",
@@ -1060,41 +1030,6 @@ def _df_to_json_safe(df: pd.DataFrame) -> str:
     return df.to_json(orient="records", force_ascii=False)
 
 
-def _analyze_questions_impl(df_source: pd.DataFrame) -> list[dict]:
-    summaries = []
-    for col_key, soru_metni in TUM_METIN_SORULARI:
-        if col_key not in df_source.columns or df_source.empty:
-            continue
-        pos_records = []
-        neg_records = []
-        yanit_sayisi = 0
-
-        for person_idx, (_, row) in enumerate(df_source.iterrows()):
-            raw_val = row.get(col_key, "")
-            if pd.isna(raw_val) or not str(raw_val).strip():
-                continue
-            yanit_sayisi += 1
-            row_duygu = str(row.get("duygu_durumu", "") or "")
-            for c_item in split_clauses(str(raw_val)):
-                yon = classify_clause(c_item, row_duygu)
-                if yon == "olumsuz":
-                    neg_records.append((person_idx, c_item))
-                else:
-                    pos_records.append((person_idx, c_item))
-
-        if yanit_sayisi > 0:
-            summaries.append(
-                {
-                    "soru_kodu": col_key,
-                    "soru": soru_metni,
-                    "yanit_sayisi": yanit_sayisi,
-                    "olumlu_noktalar": cluster_similar_statements(pos_records, top_n=3),
-                    "olumsuz_noktalar": cluster_similar_statements(neg_records, top_n=3),
-                }
-            )
-    return summaries
-
-
 def _generate_narrative_unit_summary(unit_name: str, df_b: pd.DataFrame, top_pos: list[str], top_neg: list[str]) -> str:
     if df_b.empty:
         return f"{unit_name} birimi için henüz kayıtlı görüşme yorumu bulunmamaktadır."
@@ -1253,90 +1188,6 @@ def _analyze_department_impl(df_scoped: pd.DataFrame, secili_gmy: str) -> dict:
         "olumsuz": cluster_similar_statements(dept_neg_all, top_n=4) or ["Öne çıkan olumsuz ifade bulunmuyor"],
         "birimler": birim_listesi,
     }
-
-
-def _compute_6_dept_criteria(df_view: pd.DataFrame) -> list[dict]:
-    def _mean_col(col_name: str):
-        if df_view.empty or col_name not in df_view.columns:
-            return None
-        s = pd.to_numeric(df_view[col_name], errors="coerce").dropna()
-        return round(float(s.mean()), 2) if not s.empty else None
-
-    def _face(score):
-        if score is None:
-            return "😐 Veri Yok"
-        if score >= 4.0:
-            return "😄 Güçlü / Memnun"
-        if score >= 3.2:
-            return "🙂 Dengeli / İyi"
-        return "😟 İyileştirme Gerekli"
-
-    mem_p = _mean_col("p_genel_memnuniyet")
-    ucret_p = _mean_col("p_ucret_yan_hak")
-    yz_p = _mean_col("p_yz_kullanim")
-    gmy_p = _mean_col("p_gmy_iletisimi")
-
-    def _text_pos_ratio(col_name: str) -> tuple[int, int]:
-        if df_view.empty or col_name not in df_view.columns:
-            return 0, 0
-        pos_c, tot_c = 0, 0
-        for val in df_view[col_name].dropna():
-            txt = str(val).strip()
-            if not txt:
-                continue
-            tot_c += 1
-            if classify_clause(txt) == "olumlu":
-                pos_c += 1
-        return pos_c, tot_c
-
-    h_pos, h_tot = _text_pos_ratio("q13_harmony")
-    t_pos, t_tot = _text_pos_ratio("q14_toplandigimiza_degsin")
-    k_pos, k_tot = _text_pos_ratio("q15_karar_alma_surecleri")
-
-    return [
-        {
-            "baslik": "1. Softtech Güçlü & Gelişim Alanları",
-            "aciklama": "Şirketin güçlü ve gelişime açık yönleri",
-            "gosterge": f"Genel Memnuniyet: {mem_p if mem_p is not None else '-'}/5.00",
-            "durum": _face(mem_p),
-            "accent": "teal",
-        },
-        {
-            "baslik": "2. Karar Alma Süreçleri & Strateji",
-            "aciklama": "Karar alma hızı ve üst yönetim strateji süreçleri",
-            "gosterge": f"GMY İletişimi: {gmy_p if gmy_p is not None else '-'}/5 | Olumlu Yorum: {k_pos}/{k_tot}",
-            "durum": _face(gmy_p),
-            "accent": "purple",
-        },
-        {
-            "baslik": "3. Hibrit Ritmi & Ücret & Yan Haklar",
-            "aciklama": "Ücret paketi ve çalışma modeli memnuniyeti",
-            "gosterge": f"Ücret/Yan Hak: {ucret_p if ucret_p is not None else '-'}/5.00",
-            "durum": _face(ucret_p),
-            "accent": "teal",
-        },
-        {
-            "baslik": "4. Yapay Zeka Adaptasyonu",
-            "aciklama": "CodeMantis, Amigo ve Asistan kullanım düzeyi",
-            "gosterge": f"YZ Kullanım Sıklığı: {yz_p if yz_p is not None else '-'}/5.00",
-            "durum": _face(yz_p),
-            "accent": "purple",
-        },
-        {
-            "baslik": "5. Harmony Adaptasyonu",
-            "aciklama": "Departmanın Harmony ve karne süreçlerine uyumu",
-            "gosterge": f"Olumlu Değerlendirme: {h_pos}/{h_tot} yanıt",
-            "durum": "😄 Uyumlu" if (h_tot > 0 and h_pos / h_tot >= 0.6) else ("🙂 Karma" if h_tot > 0 else "😐 Veri Yok"),
-            "accent": "teal",
-        },
-        {
-            "baslik": "6. Toplandığımıza Değsin",
-            "aciklama": "Toplantı verimlilik hassasiyeti ve tutumu",
-            "gosterge": f"Olumlu Değerlendirme: {t_pos}/{t_tot} yanıt",
-            "durum": "😄 Verimli" if (t_tot > 0 and t_pos / t_tot >= 0.6) else ("🙂 Gelişime Açık" if t_tot > 0 else "😐 Veri Yok"),
-            "accent": "purple",
-        },
-    ]
 
 
 def _compute_4_team_criteria(df_view: pd.DataFrame) -> list[dict]:
@@ -1956,13 +1807,12 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
             p.space_after = Pt(3.5)
 
     dept_analiz = _analyze_department_impl(df_filtered, secili_gmy)
-    dept_6 = _compute_6_dept_criteria(df_filtered)
     ekip_4 = _compute_4_team_criteria(df_filtered)
     aktif_birimler = [b for b in dept_analiz["birimler"] if b["gorusme_sayisi"] > 0] or dept_analiz["birimler"][:8]
     birim_gruplari = [aktif_birimler[i : i + 4] for i in range(0, len(aktif_birimler), 4)]
     ozet_gruplari = [aktif_birimler[i : i + 2] for i in range(0, len(aktif_birimler), 2)]
 
-    total_slides = 5 + max(1, len(birim_gruplari)) + max(1, len(ozet_gruplari))
+    total_slides = 4 + max(1, len(birim_gruplari)) + max(1, len(ozet_gruplari))
     slide_counter = 1
 
     n_kisi = len(df_filtered)
@@ -2011,25 +1861,13 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     add_card(s2, 0.6, 1.35, 12.1, 5.2, "2025 ve 2026 Karşılaştırmalı Sonuçlar (1-5 Puan)", comp_lines, c_teal, font_pt=12.0)
 
     s3 = prs.slides.add_slide(blank_layout)
-    add_header(s3, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Departman (6 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
-    slide_counter += 1
-    for i, c6 in enumerate(dept_6):
-        col_x = 0.6 + (i % 3) * 4.1
-        row_y = 1.35 + (i // 3) * 2.7
-        add_card(
-            s3, col_x, row_y, 3.9, 2.45, c6["baslik"],
-            [c6["aciklama"], c6["gosterge"], f"Durum: {c6['durum']}"],
-            c_teal if i % 2 == 0 else c_purple, font_pt=9.5,
-        )
-
-    s4 = prs.slides.add_slide(blank_layout)
-    add_header(s4, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Ekip (4 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s3, slide_counter, total_slides, "İzlenim Paylaşım Değerlendirme Kriterleri — Ekip (4 Başlık)", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
     for i, c4 in enumerate(ekip_4):
         col_x = 0.6 if i % 2 == 0 else 6.8
         row_y = 1.35 + (i // 2) * 2.7
         add_card(
-            s4, col_x, row_y, 5.9, 2.45, c4["baslik"],
+            s3, col_x, row_y, 5.9, 2.45, c4["baslik"],
             [c4["aciklama"], c4["gosterge"], f"Değerlendirme: {c4['durum']}"],
             c_teal if i % 2 == 0 else c_purple, font_pt=10.0,
         )
@@ -2138,8 +1976,7 @@ with st.sidebar:
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
-# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (eşit yükseklik)
-hdr_left, hdr_right = st.columns([2.1, 1.9], vertical_alignment="top")
+hdr_left, hdr_right = st.columns([2.0, 2.0], vertical_alignment="top")
 with hdr_left:
     st.markdown(
         f"""
@@ -2471,7 +2308,6 @@ elif sayfa == "Standart Dashboard & Sunum":
         if sel_ik_f != "Tümü" and "ik_is_ortagi" in df_view.columns:
             df_view = df_view[df_view["ik_is_ortagi"] == sel_ik_f]
 
-    # Seçili filtreye göre sağ üstteki köşe duygu kartını güncelle
     mood_slot.markdown(render_corner_mood_widget(df_view), unsafe_allow_html=True)
 
     k1, k2, k3, k4 = st.columns(4)
@@ -2581,7 +2417,6 @@ elif sayfa == "Standart Dashboard & Sunum":
             fig_aks.update_layout(paper_bgcolor=CARD_DARK, plot_bgcolor=CARD_DARK, font_color=TEXT_LIGHT, showlegend=False, height=270, margin=dict(l=10, r=10, t=20, b=20))
             st.plotly_chart(fig_aks, use_container_width=True)
 
-        # Dashboard alanında Aksiyon Planı notlarının açıkça listelendiği bölüm
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("📋 Aksiyon Planı")
         aksiyon_not_kayitlari = []
@@ -2656,23 +2491,210 @@ elif sayfa == "Standart Dashboard & Sunum":
             st.plotly_chart(fig_comp, use_container_width=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        st.subheader("🏛️ Departman Değerlendirme Kriterleri (6 Başlık)")
-        dept_6_cards = _compute_6_dept_criteria(df_view)
-        for row_start in range(0, 6, 3):
-            cols_3 = st.columns(3)
-            for idx_c, card_info in enumerate(dept_6_cards[row_start : row_start + 3]):
-                css_cls = "criteria-card" if card_info["accent"] == "teal" else "criteria-card-purple"
-                cols_3[idx_c].markdown(
-                    f"""
-                    <div class="{css_cls}">
-                        <div style="font-weight:700; color:{TEAL if card_info['accent']=='teal' else PURPLE_LIGHT}; font-size:1.02rem; margin-bottom:0.35rem;">{card_info['baslik']}</div>
-                        <div style="color:{TEXT_MUTED}; font-size:0.85rem; margin-bottom:0.55rem;">{card_info['aciklama']}</div>
-                        <div style="font-weight:600; color:{TEXT_LIGHT}; margin-bottom:0.25rem;">{card_info['gosterge']}</div>
-                        <div style="font-size:0.9rem; color:{POS_COLOR}; font-weight:700;">{card_info['durum']}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+        st.subheader("İzlenim Paylaşım Değerlendirme – İçerik")
+
+        def _mean_metric(col_name: str):
+            if df_view.empty or col_name not in df_view.columns:
+                return None
+            s_num = pd.to_numeric(df_view[col_name], errors="coerce").dropna()
+            return round(float(s_num.mean()), 2) if not s_num.empty else None
+
+        def _face_badge(score):
+            if score is None:
+                return "😐 Veri Yok"
+            if score >= 4.0:
+                return "😄 Güçlü / Memnun"
+            if score >= 3.2:
+                return "🙂 Dengeli / İyi"
+            return "😟 İyileştirme Gerekli"
+
+        def _top_short_bullets(cols: list[str], top_n: int = 4, direction: str | None = None) -> list[str]:
+            recs = []
+            for p_idx, (_, r_item) in enumerate(df_view.iterrows()):
+                r_duygu = str(r_item.get("duygu_durumu", "") or "")
+                for c_key in cols:
+                    if c_key not in df_view.columns:
+                        continue
+                    raw_v = r_item.get(c_key, "")
+                    if pd.isna(raw_v) or not str(raw_v).strip():
+                        continue
+                    for cl in split_clauses(str(raw_v)):
+                        cl_dir = classify_clause(cl, r_duygu)
+                        if direction is None or cl_dir == direction:
+                            recs.append((p_idx, cl))
+            return cluster_similar_statements(recs, top_n=top_n)
+
+        def _hybrid_model_percentages() -> list[tuple[str, int, float]]:
+            if df_view.empty or "q12_ilerisi_calisma_modeli" not in df_view.columns:
+                return []
+            buckets = Counter()
+            total_ans = 0
+            for val in df_view["q12_ilerisi_calisma_modeli"].dropna():
+                txt = str(val).strip()
+                if not txt:
+                    continue
+                total_ans += 1
+                low = txt.lower().replace("İ", "i").replace("I", "ı")
+                if any(k in low for k in ["tam uzaktan", "tamamen uzaktan", "full remote", "sadece evden", "evden çalış"]):
+                    buckets["Tam Uzaktan / Evden"] += 1
+                elif any(k in low for k in ["ofis", "tam zamanlı ofis", "her gün ofis"]):
+                    buckets["Ofis Ağırlıklı / Tam Ofis"] += 1
+                elif any(k in low for k in ["hibrit", "esnek", "gün", "haftada", "uzaktan", "denge"]):
+                    buckets["Hibrit / Esnek Model"] += 1
+                else:
+                    buckets["Diğer / Koşullu Görüş"] += 1
+            if total_ans == 0:
+                return []
+            ordered = []
+            for b_name, b_cnt in buckets.most_common():
+                pct = round((b_cnt / total_ans) * 100, 1)
+                ordered.append((b_name, b_cnt, pct))
+            return ordered
+
+        mem_val = _mean_metric("p_genel_memnuniyet")
+        gmy_val = _mean_metric("p_gmy_iletisimi")
+        ucret_val = _mean_metric("p_ucret_yan_hak")
+        yz_val = _mean_metric("p_yz_kullanim")
+
+        hybrid_dist = _hybrid_model_percentages()
+        hybrid_summary_txt = (
+            " • ".join([f"{b_n}: %{p_v:.1f}" for b_n, _, p_v in hybrid_dist[:3]])
+            if hybrid_dist
+            else "Yanıt dağılımı için detay açın"
+        )
+
+        content_cards = [
+            {
+                "key": "card_1_softtech",
+                "baslik": "1. Softtech Güçlü & Gelişim Alanları",
+                "aciklama": "Şirketin güçlü ve gelişime açık yönleri",
+                "gosterge": f"Genel Memnuniyet: {mem_val if mem_val is not None else '-'}/5.00",
+                "durum": _face_badge(mem_val),
+                "accent": "teal",
+            },
+            {
+                "key": "card_2_karar",
+                "baslik": "2. Karar Alma Süreçleri & Strateji",
+                "aciklama": "Karar alma hızı ve üst yönetim strateji süreçleri",
+                "gosterge": f"GMY İletişimi: {gmy_val if gmy_val is not None else '-'}/5.00",
+                "durum": _face_badge(gmy_val),
+                "accent": "purple",
+            },
+            {
+                "key": "card_3_hibrit",
+                "baslik": "3. Hibrit Ritmi",
+                "aciklama": "İlerisi için tercih edilen çalışma modeli dağılımı",
+                "gosterge": hybrid_summary_txt,
+                "durum": "📊 Yüzdelik Dağılım",
+                "accent": "teal",
+            },
+            {
+                "key": "card_4_ucret",
+                "baslik": "4. Ücret & Yan Haklar",
+                "aciklama": "Ücret, prim, yan haklar ve çalışan merkezi yorumları",
+                "gosterge": f"Ücret/Yan Hak: {ucret_val if ucret_val is not None else '-'}/5.00",
+                "durum": _face_badge(ucret_val),
+                "accent": "purple",
+            },
+            {
+                "key": "card_5_yz",
+                "baslik": "5. Yapay Zeka Adaptasyonu",
+                "aciklama": "CodeMantis, Amigo ve Asistan kullanım düzeyi",
+                "gosterge": f"YZ Kullanım Sıklığı: {yz_val if yz_val is not None else '-'}/5.00",
+                "durum": _face_badge(yz_val),
+                "accent": "teal",
+            },
+            {
+                "key": "card_6_harmony",
+                "baslik": "6. Harmony Adaptasyonu",
+                "aciklama": "Departmanın Harmony ve karne süreçlerine uyumu",
+                "gosterge": "Harmony & karne geri bildirimleri",
+                "durum": "🔄 Süreç Görünümü",
+                "accent": "purple",
+            },
+            {
+                "key": "card_7_toplantilar",
+                "baslik": "7. Toplandığımıza Değsin",
+                "aciklama": "Toplantı verimlilik hassasiyeti ve tutumu",
+                "gosterge": "Toplantı verimliliği değerlendirmeleri",
+                "durum": "⏱️ Verimlilik Görünümü",
+                "accent": "teal",
+            },
+        ]
+
+        if "selected_content_card" not in st.session_state:
+            st.session_state.selected_content_card = None
+
+        for r_start in range(0, len(content_cards), 3):
+            r_cols = st.columns(3)
+            for c_pos, c_info in enumerate(content_cards[r_start : r_start + 3]):
+                is_sel = st.session_state.selected_content_card == c_info["key"]
+                border_col = TEAL if c_info["accent"] == "teal" else PURPLE_LIGHT
+                sel_ring = f"box-shadow: 0 0 0 2px {border_col};" if is_sel else ""
+                with r_cols[c_pos]:
+                    st.markdown(
+                        f"""
+                        <div class="criteria-card{'-purple' if c_info['accent']=='purple' else ''}" style="{sel_ring} min-height: 155px; margin-bottom: 0.45rem;">
+                            <div style="font-weight:700; color:{border_col}; font-size:1.0rem; margin-bottom:0.3rem;">{c_info['baslik']}</div>
+                            <div style="color:{TEXT_MUTED}; font-size:0.83rem; margin-bottom:0.5rem;">{c_info['aciklama']}</div>
+                            <div style="font-weight:600; color:{TEXT_LIGHT}; font-size:0.88rem; margin-bottom:0.25rem;">{c_info['gosterge']}</div>
+                            <div style="font-size:0.86rem; color:{POS_COLOR}; font-weight:700;">{c_info['durum']}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    btn_txt = "Kapat" if is_sel else "Detayı Aç"
+                    if st.button(btn_txt, key=f"btn_{c_info['key']}", use_container_width=True):
+                        st.session_state.selected_content_card = None if is_sel else c_info["key"]
+                        st.rerun()
+
+        active_card = st.session_state.selected_content_card
+        if active_card == "card_1_softtech":
+            st.markdown("#### 1. Softtech Güçlü & Gelişim Alanları — Karşılaştırmalı Kırılım")
+            g_col, k_col = st.columns(2)
+            with g_col:
+                st.markdown("**✅ Güçlü Alanlar**")
+                for b_item in _top_short_bullets(["q02_guclu_yonler", "q01_calisma_hayati", "q09_vizyon_strateji"], top_n=4, direction="olumlu"):
+                    st.markdown(f"- {b_item}")
+            with k_col:
+                st.markdown("**⚠️ Gelişime Açık Alanlar**")
+                for b_item in _top_short_bullets(["q10_degistirmek_istenen", "q04_ekip_iyilestirme", "q02_guclu_yonler"], top_n=4, direction="olumsuz"):
+                    st.markdown(f"- {b_item}")
+
+        elif active_card == "card_2_karar":
+            st.markdown("#### 2. Karar Alma Süreçleri & Strateji — Öne Çıkan Yorumlar")
+            for b_item in _top_short_bullets(["q15_karar_alma_surecleri", "q09_vizyon_strateji", "q08_gmy_iletisimi"], top_n=5):
+                st.markdown(f"- {b_item}")
+
+        elif active_card == "card_3_hibrit":
+            st.markdown("#### 3. Hibrit Ritmi — İlerisi İçin Tercih Edilen Çalışma Modeli (%)")
+            if hybrid_dist:
+                df_hyb = pd.DataFrame(hybrid_dist, columns=["Çalışma Modeli Tercihi", "Kişi Sayısı", "Oran (%)"])
+                st.dataframe(df_hyb, use_container_width=True, hide_index=True)
+                for m_ad, m_cnt, m_pct in hybrid_dist:
+                    st.markdown(f"- **{m_ad}:** **%{m_pct:.1f}** ({m_cnt} yanıt)")
+            else:
+                st.info("Bu başlık için çalışma modeli yanıtı bulunamadı.")
+
+        elif active_card == "card_4_ucret":
+            st.markdown("#### 4. Ücret & Yan Haklar — En Çok Tekrar Eden Yorumlar")
+            for b_item in _top_short_bullets(["ik_ucret_merkezi", "q05_motivasyon_arttiran"], top_n=5):
+                st.markdown(f"- {b_item}")
+
+        elif active_card == "card_5_yz":
+            st.markdown("#### 5. Yapay Zeka Adaptasyonu — En Çok Tekrar Eden Yorumlar")
+            for b_item in _top_short_bullets(["q_kapanis", "q07_ym_verimlilik", "q13_harmony"], top_n=5):
+                st.markdown(f"- {b_item}")
+
+        elif active_card == "card_6_harmony":
+            st.markdown("#### 6. Harmony Adaptasyonu — En Çok Tekrar Eden Yorumlar")
+            for b_item in _top_short_bullets(["q13_harmony"], top_n=5):
+                st.markdown(f"- {b_item}")
+
+        elif active_card == "card_7_toplantilar":
+            st.markdown("#### 7. Toplandığımıza Değsin — En Çok Tekrar Eden Yorumlar")
+            for b_item in _top_short_bullets(["q14_toplandigimiza_degsin"], top_n=5):
+                st.markdown(f"- {b_item}")
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.subheader("👥 Ekip Değerlendirme Kriterleri (4 Başlık) & Öne Çıkan Yorumlar")
