@@ -515,7 +515,7 @@ def _has_completion_note(note_val: object) -> bool:
     return len(str(note_val).strip()) >= 2
 
 
-def render_corner_mood_widget(df_source: pd.DataFrame, highlight_positive: bool = False) -> str:
+def render_corner_mood_widget(df_source: pd.DataFrame, highlight_positive: bool = True) -> str:
     highlight_style = (
         "background: linear-gradient(135deg, #0B332E 0%, #11293E 55%, #1C1740 100%);"
         "border: 2px solid #10B981;"
@@ -2351,7 +2351,7 @@ with hdr_left:
     )
 with hdr_right:
     mood_slot = st.empty()
-    mood_slot.markdown(render_corner_mood_widget(df_all, highlight_positive=is_presentation_mod), unsafe_allow_html=True)
+    mood_slot.markdown(render_corner_mood_widget(df_all, highlight_positive=True), unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -3347,7 +3347,7 @@ else:
             mask = df_all.apply(lambda s: s.astype(str).str.lower().str.contains(q_low, na=False)).any(axis=1)
             df_all = df_all[mask].copy()
             st.caption(f"Filtrelenen kayıt sayısı: {len(df_all)}")
-            mood_slot.markdown(render_corner_mood_widget(df_all, highlight_positive=False), unsafe_allow_html=True)
+            mood_slot.markdown(render_corner_mood_widget(df_all, highlight_positive=True), unsafe_allow_html=True)
 
     if df_all.empty:
         st.info("Henüz kayıt bulunmuyor.")
