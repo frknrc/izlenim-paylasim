@@ -60,6 +60,10 @@ st.markdown(
             color: {TEXT_LIGHT} !important;
             border-color: {CARD_BORDER} !important;
         }}
+        /* Streamlit metin kutularındaki varsayılan İngilizce 'Press Enter to apply' ipucunu gizle */
+        div[data-testid="stTextInput"] div[data-testid="InputInstructions"] {{
+            display: none !important;
+        }}
         div[data-testid="stDateInput"] > div {{
             max-width: 240px;
         }}
@@ -379,10 +383,10 @@ BOLUM_OPTIONS = [
     "Ölçme Araçları",
     "Dönüşüm Atölyesi",
     "Süreç Kalite ve Güvence",
-    "Developer Experience",
+    "Geliştirici Deneyimi",
     "Çekirdek Sistemler",
-    "Mobil & Ön Yüz Geliştirme",
-    "API & Entegrasyon",
+    "Mobil ve Ön Yüz Geliştirme",
+    "API ve Entegrasyon",
 ]
 
 LOKASYON_OPTIONS = [
@@ -396,7 +400,7 @@ LOKASYON_OPTIONS = [
 
 IK_IS_ORTAGI_OPTIONS = [
     "Şeyma Oruç",
-    "Örnek HRBP",
+    "Örnek İK İş Ortağı",
     "İK İş Ortağı - Teknoloji",
     "İK İş Ortağı - Bankacılık",
 ]
@@ -409,13 +413,13 @@ DEFAULT_USERS = {
         "gmy_birimler": GMY_BIRIM_MAP,
     },
     "hrbp_ornek": {
-        "ad_soyad": "Örnek HRBP",
+        "ad_soyad": "Örnek İK İş Ortağı",
         "sifre": "panel2026",
         "rol": "hrbp",
         "gmy_birimler": GMY_BIRIM_MAP,
     },
     "admin": {
-        "ad_soyad": "İK Raporlama Admin",
+        "ad_soyad": "İK Raporlama Yöneticisi",
         "sifre": "admin2026",
         "rol": "admin",
         "gmy_birimler": GMY_BIRIM_MAP,
@@ -477,12 +481,24 @@ def _parse_date_safe(val: object, fallback: date | None = None) -> date:
     s = str(val).strip()
     if not s:
         return default_d
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y"):
         try:
             return datetime.strptime(s[:10], fmt).date()
         except ValueError:
             continue
     return default_d
+
+
+def _format_tr_date_input(raw_val: object) -> str:
+    if raw_val is None:
+        return ""
+    s = str(raw_val).strip()
+    if not s:
+        return ""
+    parsed = _parse_date_safe(s, fallback=None)
+    if parsed is not None:
+        return parsed.strftime("%d.%m.%Y")
+    return s
 
 
 def _snap_half_step(raw_val: object) -> float | None:
@@ -726,7 +742,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
                 "birim": b_val,
                 "bolum": str(row.get("bolum", "") or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]),
                 "lokasyon": str(row.get("lokasyon", "") or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]),
-                "ise_giris_tarihi": str(row.get("ise_giris_tarihi", "") or f"202{(idx % 5) + 1}-0{(idx % 8) + 1}-15"),
+                "ise_giris_tarihi": _format_tr_date_input(row.get("ise_giris_tarihi", "")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}",
                 "ik_is_ortagi": str(row.get("ik_is_ortagi", "") or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]),
             }
 
@@ -739,7 +755,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
             "birim": "10000474-Kurumsal Uygulamalar",
             "bolum": "Ölçme ve Raporlama",
             "lokasyon": "İstanbul - Ataşehir",
-            "ise_giris_tarihi": "2022-03-14",
+            "ise_giris_tarihi": "14.03.2022",
             "ik_is_ortagi": "Şeyma Oruç",
         },
         "1002": {
@@ -750,7 +766,7 @@ def get_employee_directory(df_all: pd.DataFrame) -> dict[str, dict]:
             "birim": "10000182-Veri ve Yapay Zeka Uygulamaları",
             "bolum": "Dönüşüm Atölyesi",
             "lokasyon": "İstanbul - Teknopark (Pendik)",
-            "ise_giris_tarihi": "2023-09-01",
+            "ise_giris_tarihi": "01.09.2023",
             "ik_is_ortagi": "Şeyma Oruç",
         },
     }
@@ -1193,7 +1209,7 @@ def _compute_6_dept_criteria(df_view: pd.DataFrame) -> list[dict]:
             "accent": "teal",
         },
         {
-            "baslik": "4. AI Adaptasyonu",
+            "baslik": "4. Yapay Zeka Adaptasyonu",
             "aciklama": "CodeMantis, Amigo ve Asistan kullanım düzeyi",
             "gosterge": f"YZ Kullanım Sıklığı: {yz_p if yz_p is not None else '-'}/5.00",
             "durum": _face(yz_p),
@@ -1320,7 +1336,7 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
         dept_val = _clean(r.get("departman") or r.get("Departman")) or DEPARTMAN_OPTIONS[idx % len(DEPARTMAN_OPTIONS)]
         bolum_val = _clean(r.get("bolum") or r.get("Bölüm")) or BOLUM_OPTIONS[idx % len(BOLUM_OPTIONS)]
         lok_val = _clean(r.get("lokasyon") or r.get("Lokasyon")) or LOKASYON_OPTIONS[idx % len(LOKASYON_OPTIONS)]
-        ise_giris_val = _clean(r.get("ise_giris_tarihi") or r.get("İşe Giriş Tarihi")) or f"202{(idx % 5) + 1}-0{(idx % 8) + 1}-15"
+        ise_giris_val = _format_tr_date_input(r.get("ise_giris_tarihi") or r.get("İşe Giriş Tarihi")) or f"15.0{(idx % 8) + 1}.202{(idx % 5) + 1}"
         ik_ortak_val = _clean(r.get("ik_is_ortagi") or r.get("İK İş Ortağı")) or IK_IS_ORTAGI_OPTIONS[idx % len(IK_IS_ORTAGI_OPTIONS)]
         sicil_val = _clean(r.get("sicil_no") or r.get("Sicil") or r.get("Sicil No")) or str(1001 + idx)
         ad_soyad_val = _clean(r.get("ad_soyad") or r.get("Ad Soyad")) or f"Çalışan {idx + 1}"
@@ -1462,7 +1478,7 @@ def load_records() -> tuple[pd.DataFrame, str]:
                 return df, "Google Sheets (Canlı)"
             return pd.DataFrame(columns=st.session_state.local_df.columns), "Google Sheets (Boş)"
         except Exception as e:
-            return st.session_state.local_df.copy(), f"Yerel/Demo Mod (Sheets hatası: {e})"
+            return st.session_state.local_df.copy(), f"Yerel/Demo Mod (Tablo hatası: {e})"
 
     return st.session_state.local_df.copy(), f"Yerel Havuz ({len(st.session_state.local_df)} Kayıt)"
 
@@ -1531,14 +1547,14 @@ def build_excel_template() -> bytes:
     sample_row = {
         "Sicil No": "1001",
         "Ad Soyad": "Ahmet Yılmaz",
-        "Görüşme Tarihi": date.today().strftime("%Y-%m-%d"),
+        "Görüşme Tarihi": date.today().strftime("%d.%m.%Y"),
         "Dönem": "2026 - 2. Dönem",
         "GMY / Domain": "10000027-Dijital Bankacılık ve Uluslararası Bankacılık Çözümleri",
         "Departman": "Yazılım Geliştirme Departmanı",
         "Birim / Ekip": "10000474-Kurumsal Uygulamalar",
         "Bölüm": "Ölçme ve Raporlama",
         "Lokasyon": "İstanbul - Ataşehir",
-        "İşe Giriş Tarihi": "2022-03-14",
+        "İşe Giriş Tarihi": "14.03.2022",
         "İK İş Ortağı": "Şeyma Oruç",
         "Çalışma Modeli": "Hibrit",
         "Duygu Durumu": "Olumlu",
@@ -1848,7 +1864,7 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
     olumlu_adet = int((df_filtered["duygu_durumu"] == "Olumlu").sum()) if "duygu_durumu" in df_filtered.columns and not df_filtered.empty else 0
 
     s1 = prs.slides.add_slide(blank_layout)
-    add_header(s1, slide_counter, total_slides, "Executive Summary & Duygu / Aksiyon Özeti", f"{secili_gmy}  |  Dönem: {secili_donem}")
+    add_header(s1, slide_counter, total_slides, "Yönetici Özeti — Duygu ve Aksiyon Durumu", f"{secili_gmy}  |  Dönem: {secili_donem}")
     slide_counter += 1
     add_card(
         s1, 0.6, 1.35, 5.9, 5.2, "Görüşme, Duygu ve Aksiyon Özeti",
@@ -2049,7 +2065,7 @@ if sayfa == "1-1 Görüşme Kayıt":
                 kid = str(r.get("kayit_id", ""))
                 sic = str(r.get("sicil_no", ""))
                 ad = str(r.get("ad_soyad", "") or r.get("calisan_rumuzu", ""))
-                gt = str(r.get("gorusme_tarihi", ""))
+                gt = _format_tr_date_input(r.get("gorusme_tarihi", ""))
                 lbl = f"{sic} - {ad} ({gt}) [ID: {kid}]"
                 secenekler.append(lbl)
                 id_map[lbl] = kid
@@ -2096,7 +2112,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             key=f"inp_gorusme_tarihi_{edit_kayit_id or 'new'}_{sicil_input}",
         )
     with s_col4:
-        donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - Q1", "2026 - Q2", "2026 - Q3", "2026 - Q4"]
+        donem_opts = ["2026 - 1. Dönem", "2026 - 2. Dönem", "2026 - 1. Çeyrek", "2026 - 2. Çeyrek", "2026 - 3. Çeyrek", "2026 - 4. Çeyrek"]
         sec_donem = st.selectbox(
             "Görüşme Dönemi",
             donem_opts,
@@ -2140,8 +2156,8 @@ if sayfa == "1-1 Görüşme Kayıt":
     with c6:
         ise_giris_str = st.text_input(
             "İşe Giriş Tarihi",
-            value=str(prefill.get("ise_giris_tarihi", "")),
-            placeholder="YYYY-AA-GG",
+            value=_format_tr_date_input(prefill.get("ise_giris_tarihi", "")),
+            placeholder="GG.AA.YYYY",
         )
     with c7:
         sec_ik_ortagi = st.selectbox(
@@ -2150,7 +2166,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             index=_pick_idx(IK_IS_ORTAGI_OPTIONS, str(prefill.get("ik_is_ortagi", "")), 0),
         )
     with c8:
-        model_opts = ["Hibrit", "Remote", "Ofis / Saha"]
+        model_opts = ["Hibrit", "Uzaktan", "Ofis / Saha"]
         calisma_modeli = st.selectbox(
             "Çalışma Modeli",
             model_opts,
@@ -2250,7 +2266,8 @@ if sayfa == "1-1 Görüşme Kayıt":
     if st.button(btn_label, type="primary", use_container_width=True):
         final_kayit_id = edit_kayit_id if edit_kayit_id else datetime.now().strftime("%Y%m%d-%H%M%S")
         final_ad = ad_soyad_input.strip() or (emp_info["ad_soyad"] if emp_info else "Anonim")
-        g_tarih_formatted = gorusme_tarihi_dt.strftime("%Y-%m-%d")
+        g_tarih_formatted = gorusme_tarihi_dt.strftime("%d.%m.%Y")
+        ise_giris_formatted = _format_tr_date_input(ise_giris_str)
         new_record = {
             "kayit_id": final_kayit_id,
             "sicil_no": sicil_input or final_kayit_id,
@@ -2265,7 +2282,7 @@ if sayfa == "1-1 Görüşme Kayıt":
             "birim": sec_birim,
             "bolum": sec_bolum,
             "lokasyon": sec_lokasyon,
-            "ise_giris_tarihi": ise_giris_str.strip(),
+            "ise_giris_tarihi": ise_giris_formatted,
             "katilimci_turu": "Çalışan",
             "calisan_rumuzu": f"{final_ad} ({sec_birim.split('-', 1)[-1]})",
             "calisma_modeli": calisma_modeli,
@@ -2381,7 +2398,7 @@ elif sayfa == "Standart Dashboard & Sunum":
     with exp_c1:
         pptx_state_key = f"pptx_{_df_fingerprint(df_view)}_{sel_gmy_f}_{sel_donem_f}"
         if st.button("📊 Sunumu Hazırla (.pptx)", use_container_width=True):
-            with st.spinner("PowerPoint sunumu oluşturuluyor..."):
+            with st.spinner("Sunum oluşturuluyor..."):
                 st.session_state[pptx_state_key] = _cached_pptx_bytes(
                     _df_fingerprint(df_view),
                     _df_to_json_safe(df_view),
@@ -2390,7 +2407,7 @@ elif sayfa == "Standart Dashboard & Sunum":
                 )
         if pptx_state_key in st.session_state:
             st.download_button(
-                label="📥 PowerPoint Sunumunu İndir (.pptx)",
+                label="📥 Sunumu İndir (.pptx)",
                 data=st.session_state[pptx_state_key],
                 file_name=f"Izlenim_Paylasim_{sel_donem_f.replace(' ', '_')}.pptx",
                 mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
