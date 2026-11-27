@@ -169,9 +169,9 @@ st.markdown(
             border: 1px solid {CARD_BORDER};
             border-left: 5px solid {TEAL};
             border-radius: 12px;
-            padding: 1rem 1.35rem;
-            min-height: 112px;
-            height: 100%;
+            padding: 1rem 1.4rem;
+            height: 136px;
+            box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -192,9 +192,9 @@ st.markdown(
             background: linear-gradient(145deg, #131E33 0%, #171933 100%);
             border: 1px solid {CARD_BORDER};
             border-radius: 12px;
-            padding: 0.9rem 1.1rem;
-            min-height: 112px;
-            height: 100%;
+            padding: 0.9rem 1.15rem;
+            height: 136px;
+            box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -2122,7 +2122,7 @@ assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
 # Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (orantılı sütunlar)
-hdr_left, hdr_right = st.columns([2.2, 1.8], vertical_alignment="top")
+hdr_left, hdr_right = st.columns([2.1, 1.9], vertical_alignment="top")
 with hdr_left:
     st.markdown(
         f"""
