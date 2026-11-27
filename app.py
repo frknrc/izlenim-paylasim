@@ -136,8 +136,15 @@ st.markdown(
         div[data-testid="stTextInput"] div[data-testid="InputInstructions"] {{
             display: none !important;
         }}
-        div[data-testid="stDateInput"] > div {{
-            max-width: 240px;
+        /* Tarih kutusunu diğer kutularla aynı sütun genişliğine eşitle */
+        div[data-testid="stDateInput"],
+        div[data-testid="stDateInput"] > div,
+        div[data-testid="stDateInput"] > div > div {{
+            width: 100% !important;
+            max-width: 100% !important;
+        }}
+        div[data-testid="stDateInput"] input {{
+            width: 100% !important;
         }}
         /* Butonlar (Form içi submit butonları dahil) */
         .stButton > button,
@@ -156,12 +163,14 @@ st.markdown(
             opacity: 0.92;
             color: #FFFFFF !important;
         }}
+        /* Üst başlık ve sağ duygu kutusu için orantılı yükseklik ve hizalama */
         .panel-header {{
             background: linear-gradient(120deg, {CARD_DARK} 0%, #1B1638 60%, #0E293B 100%);
             border: 1px solid {CARD_BORDER};
             border-left: 5px solid {TEAL};
             border-radius: 12px;
-            padding: 1.15rem 1.45rem;
+            padding: 1rem 1.35rem;
+            min-height: 112px;
             height: 100%;
             display: flex;
             flex-direction: column;
@@ -183,8 +192,12 @@ st.markdown(
             background: linear-gradient(145deg, #131E33 0%, #171933 100%);
             border: 1px solid {CARD_BORDER};
             border-radius: 12px;
-            padding: 0.9rem 1.05rem;
+            padding: 0.9rem 1.1rem;
+            min-height: 112px;
             height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }}
         .mood-top-row {{
             display: flex;
@@ -192,8 +205,8 @@ st.markdown(
             gap: 0.75rem;
         }}
         .mood-svg-wrap {{
-            width: 48px;
-            height: 48px;
+            width: 46px;
+            height: 46px;
             flex-shrink: 0;
             border-radius: 12px;
             display: flex;
@@ -203,7 +216,7 @@ st.markdown(
             border: 1px solid rgba(148, 163, 184, 0.2);
         }}
         .mood-title {{
-            font-size: 0.98rem;
+            font-size: 0.96rem;
             font-weight: 800;
             line-height: 1.2;
         }}
@@ -288,7 +301,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
     """Ana ekranın sağ üst köşesinde genel duygu ifadesi ve altında yüzde dağılımı gösterir."""
     if df_source is None or df_source.empty or "duygu_durumu" not in df_source.columns:
         svg_empty = f"""
-        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" stroke="{TEXT_MUTED}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
             <circle cx="23" cy="15" r="1.8" fill="{TEXT_MUTED}"/>
@@ -328,7 +341,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = POS_COLOR
         vurgu_yuzde = pos_pct
         svg_face = f"""
-        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(16, 185, 129, 0.16)" stroke="{POS_COLOR}" stroke-width="2.2"/>
             <circle cx="13" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
             <circle cx="23" cy="14.5" r="1.9" fill="{POS_COLOR}"/>
@@ -340,7 +353,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = NEG_COLOR
         vurgu_yuzde = neg_pct
         svg_face = f"""
-        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(248, 113, 113, 0.16)" stroke="{NEG_COLOR}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.9" fill="{NEG_COLOR}"/>
             <circle cx="23" cy="15" r="1.9" fill="{NEG_COLOR}"/>
@@ -352,7 +365,7 @@ def render_corner_mood_widget(df_source: pd.DataFrame) -> str:
         durum_renk = TEAL
         vurgu_yuzde = neu_pct
         svg_face = f"""
-        <svg width="34" height="34" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="18" cy="18" r="14" fill="rgba(34, 211, 238, 0.14)" stroke="{TEAL}" stroke-width="2.2"/>
             <circle cx="13" cy="15" r="1.9" fill="{TEAL}"/>
             <circle cx="23" cy="15" r="1.9" fill="{TEAL}"/>
@@ -2108,8 +2121,8 @@ with st.sidebar:
 assigned_gmy_map = user["gmy_birimler"]
 gmy_options = list(assigned_gmy_map.keys())
 
-# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı
-hdr_left, hdr_right = st.columns([2.7, 1.3])
+# Üst başlık + sağ köşede dinamik güncellenen genel duygu ifadesi ve yüzde dağılımı (orantılı sütunlar)
+hdr_left, hdr_right = st.columns([2.2, 1.8], vertical_alignment="stretch")
 with hdr_left:
     st.markdown(
         f"""
