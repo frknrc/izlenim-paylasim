@@ -288,7 +288,7 @@ st.markdown(
             border-radius: 10px;
             padding: 0.9rem 1.15rem;
             margin-bottom: 0.7rem;
-            opacity: 0.88;
+            opacity: 0.92;
         }}
         .criteria-card {{
             background-color: {CARD_DARK};
@@ -347,6 +347,12 @@ def _is_completed_flag(val: object) -> bool:
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return False
     return str(val).strip().lower() in {"true", "1", "evet", "yes", "tamamlandi", "tamamlandı", "done"}
+
+
+def _has_completion_note(note_val: object) -> bool:
+    if note_val is None or (isinstance(note_val, float) and np.isnan(note_val)):
+        return False
+    return len(str(note_val).strip()) >= 2
 
 
 def render_corner_mood_widget(df_source: pd.DataFrame, highlight_positive: bool = False) -> str:
@@ -792,6 +798,8 @@ COLUMN_LABELS = {
     "aksiyon_seviyesi": "Aksiyon Seviyesi",
     "aksiyon_notu": "Aksiyon Planı / Detay",
     "aksiyon_tamamlandi": "Aksiyon Tamamlandı",
+    "aksiyon_tamamlanma_tarihi": "Aksiyon Tamamlanma Tarihi",
+    "aksiyon_tamamlanma_notu": "Aksiyon Nasıl Tamamlandı (Not)",
     "q_kapanis": "Kapanış / Ek Not",
     **dict(GORUSME_SORULARI),
     **dict(IK_BASLIKLARI),
@@ -1411,8 +1419,20 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
             aksiyon_var = "Hayır"
             aksiyon_not_final = ""
 
+        tamamlanma_not_val = _clean(
+            r.get("aksiyon_tamamlanma_notu") or r.get("Aksiyon Nasıl Tamamlandı (Not)")
+        )
+        tamamlanma_tarih_val = _format_tr_date_input(
+            r.get("aksiyon_tamamlanma_tarihi") or r.get("Aksiyon Tamamlanma Tarihi")
+        )
         tamamlandi_raw = r.get("aksiyon_tamamlandi") if "aksiyon_tamamlandi" in r else r.get("Aksiyon Tamamlandı")
-        aksiyon_tamamlandi = _is_completed_flag(tamamlandi_raw) if aksiyon_var == "Evet" else False
+        aksiyon_tamamlandi = (
+            _is_completed_flag(tamamlandi_raw) and _has_completion_note(tamamlanma_not_val)
+            if aksiyon_var == "Evet"
+            else False
+        )
+        if not aksiyon_tamamlandi:
+            tamamlanma_tarih_val = ""
 
         yz_yorum = _clean(r.get("Yapay Zeka Kullanım Sıklığı Yorum(CodeMantis, Amigo, Asistan vb.)"))
         kapanis_txt = _clean(r.get("q_kapanis") or r.get("Paylaşmak istediğin veya eklemek istediğin farklı konu var mı?"))
@@ -1450,37 +1470,17 @@ def _map_records_to_df(records: list[dict]) -> pd.DataFrame:
                 "aksiyon_seviyesi": _clean(r.get("aksiyon_seviyesi")) or ("Birim / YM" if aksiyon_var == "Evet" else "Yok"),
                 "aksiyon_notu": aksiyon_not_final,
                 "aksiyon_tamamlandi": aksiyon_tamamlandi,
-                "q01_calisma_hayati": _clean(r.get("q01_calisma_hayati") or r.get("st'te çalışma hayatın nasıl gidiyor?")),
-                "q02_guclu_yonler": _clean(r.get("q02_guclu_yonler") or r.get("Sana göre st’teki olumlu/güçlü yönler neler?")),
-                "q03_ekip_rol_tatmin": _clean(r.get("q03_ekip_rol_tatmin") or r.get("Görev aldığın ekip, rolün ve projelerin seni tatmin ediyor, sana katkı sağlıyor mu?")),
-                "q04_ekip_iyilestirme": _clean(r.get("q04_ekip_iyilestirme") or r.get("Ekibinde sana göre daha iyi olması gereken şeyler neler?")),
-                "q05_motivasyon_arttiran": _clean(r.get("q05_motivasyon_arttiran") or r.get("Kendi motivasyonunu daha çok arttıracak şeyler neler olabilir? (İş, proje, kariyer vb.)")),
-                "q06_yonetici_geri_bildirim": _clean(r.get("q06_yonetici_geri_bildirim") or r.get("Yöneticin gelişimin için zaman ayırıp düzenli geri bildirim verebiliyor mu? Görüşmenin içeriği beklentini karşılıyor mu? (1.Yönetici, varsa YHL, Direktör)")),
-                "q07_ym_verimlilik": _clean(r.get("q07_ym_verimlilik") or r.get("Yetkinlik Merkezi yapısının verimliliğini nasıl değerlendirirsin? (Eğitim, iş süreçlerine katkı, matris yapı vb.)")),
-                "q08_gmy_iletisimi": _clean(r.get("q08_gmy_iletisimi") or r.get("GMY iletişimi ile ilgili değerlendirmelerin nasıl olur?")),
-                "q09_vizyon_strateji": _clean(r.get("q09_vizyon_strateji") or r.get("Şirketin sunduğu vizyon ve stratejiyi büyük resimde nasıl değerlendiriyorsun?")),
-                "q10_degistirmek_istenen": q10_txt,
-                "q11_mevcut_calisma_modeli": _clean(r.get("q11_mevcut_calisma_modeli") or r.get("Mevcut çalışma modelinle ilgili ne düşünüyorsun?")),
-                "q12_ilerisi_calisma_modeli": _clean(r.get("q12_ilerisi_calisma_modeli") or r.get("İlerisi için nasıl bir çalışma modeli olursa daha verimli çalışacağına inanıyorsun?")),
-                "q13_harmony": _clean(r.get("q13_harmony") or r.get("Harmony ile ilgili görüşlerin nasıl, çalışma sürecine olan etkisini nasıl değerlendirirsin?")),
-                "q14_toplandigimiza_degsin": _clean(r.get("q14_toplandigimiza_degsin") or r.get('"Toplandığımıza Değsin" temasının ne kadar işlendiğini düşünüyorsun?')),
-                "q15_karar_alma_surecleri": _clean(r.get("q15_karar_alma_surecleri") or r.get("Karar alma süreçlerini hem ekip içi işleyişler hem de üst yönetim seviyesinde nasıl değerlendirirsin?")),
-                "ik_kariyer": _clean(r.get("ik_kariyer") or r.get("İşe Alım ve Kariyer Yönetimi")),
-                "ik_deneyim_marka": _clean(r.get("ik_deneyim_marka") or r.get("Çalışan Deneyimi ve İşveren Markası Tanıtımı")),
-                "ik_ucret_merkezi": _clean(r.get("ik_ucret_merkezi") or r.get("Ücretlendirme ve Çalışan Merkezi")),
-                "ik_akademi": _clean(r.get("ik_akademi") or r.get("st Akademi")),
+                "aksiyon_tamamlanma_tarihi": tamamlanma_tarih_val,
+                "aksiyon_tamamlanma_notu": tamamlanma_not_val if aksiyon_tamamlandi else tamamlanma_not_val,
                 "q_kapanis": kapanis_txt,
-                "p_genel_memnuniyet": mem,
-                "p_ekip_motivasyonu": _score(r.get("p_ekip_motivasyonu") if "p_ekip_motivasyonu" in r else r.get("Ekip Motivasyonu")),
-                "p_kendi_motivasyonu": _score(r.get("p_kendi_motivasyonu") if "p_kendi_motivasyonu" in r else r.get("Kendi Motivasyonu")),
-                "p_is_yasam_dengesi": _score(r.get("p_is_yasam_dengesi") if "p_is_yasam_dengesi" in r else r.get("İş Yaşam Dengesi")),
-                "p_1_yonetici_iletisimi": _score(r.get("p_1_yonetici_iletisimi") if "p_1_yonetici_iletisimi" in r else r.get("1.Yönetici İletişimi")),
-                "p_ym_degerlendirme": _score(r.get("p_ym_degerlendirme") if "p_ym_degerlendirme" in r else r.get("Yetkinlik Merkezi Değerlendirmesi")),
-                "p_direktor_iletisimi": _score(r.get("p_direktor_iletisimi") if "p_direktor_iletisimi" in r else r.get("Direktör İletişimi")),
-                "p_gmy_iletisimi": _score(r.get("p_gmy_iletisimi") if "p_gmy_iletisimi" in r else r.get("GMY İletişimi")),
-                "p_ucret_yan_hak": _score(r.get("p_ucret_yan_hak") if "p_ucret_yan_hak" in r else r.get("Ücret Yan Haklar Motivasyonu")),
-                "p_ik_iletisimi": _score(r.get("p_ik_iletisimi") if "p_ik_iletisimi" in r else r.get("İK İletişimi/Çalışmaları")),
-                "p_yz_kullanim": _score(r.get("p_yz_kullanim") if "p_yz_kullanim" in r else r.get("Yapay Zeka Kullanım Sıklığı(CodeMantis, Amigo, Asistan vb.)")),
+                **{
+                    k: _clean(r.get(k) or r.get(lbl))
+                    for k, lbl in (GORUSME_SORULARI + IK_BASLIKLARI)
+                },
+                **{
+                    k: _score(r.get(k) if k in r else r.get(lbl))
+                    for k, lbl in PUAN_BASLIKLARI
+                },
             }
         )
     return pd.DataFrame(rows_out)
@@ -1492,17 +1492,35 @@ def _sync_action_plan_to_df(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     if "aksiyon_tamamlandi" not in out.columns:
         out["aksiyon_tamamlandi"] = False
+    if "aksiyon_tamamlanma_tarihi" not in out.columns:
+        out["aksiyon_tamamlanma_tarihi"] = ""
+    if "aksiyon_tamamlanma_notu" not in out.columns:
+        out["aksiyon_tamamlanma_notu"] = ""
+
     for idx, row in out.iterrows():
         sic = str(row.get("sicil_no", "") or "").strip()
+        done_note = str(row.get("aksiyon_tamamlanma_notu", "") or "").strip()
+        done_flag = _is_completed_flag(row.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_note)
+
         if sic in AKSIYON_PLANI_MAP:
             out.at[idx, "aksiyon_ihtiyaci"] = "Evet"
             cur_note = str(row.get("aksiyon_notu", "") or "").strip()
             if not _has_meaningful_action_note(cur_note):
                 out.at[idx, "aksiyon_notu"] = AKSIYON_PLANI_MAP[sic]
-            out.at[idx, "aksiyon_tamamlandi"] = _is_completed_flag(row.get("aksiyon_tamamlandi", False))
+            out.at[idx, "aksiyon_tamamlandi"] = done_flag
+            out.at[idx, "aksiyon_tamamlanma_notu"] = done_note
+            out.at[idx, "aksiyon_tamamlanma_tarihi"] = (
+                _format_tr_date_input(row.get("aksiyon_tamamlanma_tarihi", "")) if done_flag else ""
+            )
         else:
-            out.at[idx, "aksiyon_ihtiyaci"] = "Hayır"
-            out.at[idx, "aksiyon_tamamlandi"] = False
+            has_other_aks = str(row.get("aksiyon_ihtiyaci", "")).strip() == "Evet"
+            out.at[idx, "aksiyon_ihtiyaci"] = "Evet" if has_other_aks else "Hayır"
+            out.at[idx, "aksiyon_tamamlandi"] = done_flag if has_other_aks else False
+            out.at[idx, "aksiyon_tamamlanma_tarihi"] = (
+                _format_tr_date_input(row.get("aksiyon_tamamlanma_tarihi", ""))
+                if (has_other_aks and done_flag)
+                else ""
+            )
     return out
 
 
@@ -1547,17 +1565,33 @@ def load_records() -> tuple[pd.DataFrame, str]:
     return st.session_state.local_df.copy(), f"Yerel Havuz ({len(st.session_state.local_df)} Kayıt)"
 
 
-def update_action_completion_status(kayit_id: str, sicil_no: str, completed: bool) -> None:
+def update_action_completion_record(
+    kayit_id: str,
+    sicil_no: str,
+    completed: bool,
+    completion_date: str,
+    completion_note: str,
+) -> tuple[bool, str]:
+    clean_note = (completion_note or "").strip()
+    clean_date = _format_tr_date_input(completion_date) if completed else ""
+
+    if completed and not _has_completion_note(clean_note):
+        return False, "Aksiyonu tamamlandı olarak işaretlemek için nasıl tamamlandığına dair not girilmelidir."
+
     df_curr = st.session_state.local_df.copy()
     matched = False
     if not df_curr.empty:
         if kayit_id and "kayit_id" in df_curr.columns and (df_curr["kayit_id"].astype(str) == str(kayit_id)).any():
             mask = df_curr["kayit_id"].astype(str) == str(kayit_id)
             df_curr.loc[mask, "aksiyon_tamamlandi"] = bool(completed)
+            df_curr.loc[mask, "aksiyon_tamamlanma_tarihi"] = clean_date
+            df_curr.loc[mask, "aksiyon_tamamlanma_notu"] = clean_note
             matched = True
         elif sicil_no and "sicil_no" in df_curr.columns and (df_curr["sicil_no"].astype(str) == str(sicil_no)).any():
             mask = df_curr["sicil_no"].astype(str) == str(sicil_no)
             df_curr.loc[mask, "aksiyon_tamamlandi"] = bool(completed)
+            df_curr.loc[mask, "aksiyon_tamamlanma_tarihi"] = clean_date
+            df_curr.loc[mask, "aksiyon_tamamlanma_notu"] = clean_note
             matched = True
     if matched:
         st.session_state.local_df = df_curr
@@ -1567,19 +1601,26 @@ def update_action_completion_status(kayit_id: str, sicil_no: str, completed: boo
         try:
             ws = spreadsheet.worksheet("gorusmeler")
             headers = ws.row_values(1)
-            if "aksiyon_tamamlandi" not in headers and headers:
-                ws.update_cell(1, len(headers) + 1, "aksiyon_tamamlandi")
-                headers.append("aksiyon_tamamlandi")
-            if "kayit_id" in headers and "aksiyon_tamamlandi" in headers:
+            for extra_col in ["aksiyon_tamamlandi", "aksiyon_tamamlanma_tarihi", "aksiyon_tamamlanma_notu"]:
+                if extra_col not in headers and headers:
+                    ws.update_cell(1, len(headers) + 1, extra_col)
+                    headers.append(extra_col)
+            if "kayit_id" in headers:
                 id_idx = headers.index("kayit_id")
                 done_idx = headers.index("aksiyon_tamamlandi") + 1
+                dt_idx = headers.index("aksiyon_tamamlanma_tarihi") + 1
+                nt_idx = headers.index("aksiyon_tamamlanma_notu") + 1
                 all_vals = ws.get_all_values()
                 for r_i, r_vals in enumerate(all_vals[1:], start=2):
                     if len(r_vals) > id_idx and str(r_vals[id_idx]).strip() == str(kayit_id).strip():
                         ws.update_cell(r_i, done_idx, "Evet" if completed else "Hayır")
+                        ws.update_cell(r_i, dt_idx, clean_date)
+                        ws.update_cell(r_i, nt_idx, clean_note)
                         break
         except Exception:
             pass
+
+    return True, "Aksiyon tamamlanma bilgisi kaydedildi."
 
 
 def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tuple[bool, str]:
@@ -1589,7 +1630,7 @@ def save_or_update_record(record: dict, edit_kayit_id: str | None = None) -> tup
             try:
                 ws = spreadsheet.worksheet("gorusmeler")
             except Exception:
-                ws = spreadsheet.add_worksheet(title="gorusmeler", rows=1000, cols=70)
+                ws = spreadsheet.add_worksheet(title="gorusmeler", rows=1000, cols=75)
             headers = ws.row_values(1)
             if not headers:
                 headers = list(record.keys())
@@ -1643,6 +1684,8 @@ def build_excel_template() -> bytes:
         "Aksiyon planı gerekli mi?",
         "Aksiyon Planı / Detay",
         "Aksiyon Tamamlandı",
+        "Aksiyon Tamamlanma Tarihi",
+        "Aksiyon Nasıl Tamamlandı (Not)",
     ] + [q_lbl for _, q_lbl in TUM_METIN_SORULARI] + [p_lbl for _, p_lbl in PUAN_BASLIKLARI]
 
     sample_row = {
@@ -1663,6 +1706,8 @@ def build_excel_template() -> bytes:
         "Aksiyon planı gerekli mi?": "Evet",
         "Aksiyon Planı / Detay": "Ekip değişikliği talebi bulunmakta, toplantı",
         "Aksiyon Tamamlandı": "Hayır",
+        "Aksiyon Tamamlanma Tarihi": "",
+        "Aksiyon Nasıl Tamamlandı (Not)": "",
         "Genel Memnuniyet": 4.5,
         "Ekip Motivasyonu": 4.0,
     }
@@ -2066,7 +2111,14 @@ def _build_pptx_impl(df_filtered: pd.DataFrame, secili_gmy: str, secili_donem: s
         not_metni = str(r.get("aksiyon_notu", "") or "").strip()
         bir = str(r.get("birim", ""))
         kisi = str(r.get("ad_soyad", "") or r.get("calisan_rumuzu", ""))
-        done_tag = "[Tamamlandı] " if _is_completed_flag(r.get("aksiyon_tamamlandi", False)) else ""
+        is_done = _is_completed_flag(r.get("aksiyon_tamamlandi", False))
+        done_note = str(r.get("aksiyon_tamamlanma_notu", "") or "").strip()
+        done_dt = str(r.get("aksiyon_tamamlanma_tarihi", "") or "").strip()
+        done_tag = (
+            f"[Tamamlandı{f' - {done_dt}' if done_dt else ''}: {done_note}] "
+            if (is_done and done_note)
+            else ("[Tamamlandı] " if is_done else "")
+        )
         aksiyon_satirlari.append(f"{done_tag}[{bir} | {kisi}] {not_metni}")
 
     add_card(s_last, 0.6, 1.35, 12.1, 5.2, "Takip Edilecek Aksiyon Maddeleri", aksiyon_satirlari or ["Seçilen filtrede aksiyon planı bulunmuyor."], c_teal)
@@ -2333,11 +2385,6 @@ if sayfa == "1-1 Görüşme Kayıt":
         placeholder="Örn: Ekip değişikliği talebi bulunmakta, toplantı",
         key=f"inp_aksiyon_plani_{form_scope}",
     )
-    aksiyon_tamamlandi_form = st.checkbox(
-        "Aksiyon Tamamlandı olarak işaretle",
-        value=_is_completed_flag(prefill.get("aksiyon_tamamlandi", False)),
-        key=f"inp_aksiyon_tamamlandi_{form_scope}",
-    )
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "💬 15 Görüşme Sorusu",
@@ -2413,7 +2460,11 @@ if sayfa == "1-1 Görüşme Kayıt":
         clean_note = aksiyon_notu.strip()
         has_note = _has_meaningful_action_note(clean_note)
         final_aksiyon_ihtiyaci = "Evet" if (aksiyon_ihtiyaci == "Evet" or has_note) else "Hayır"
-        final_tamamlandi = bool(aksiyon_tamamlandi_form) if final_aksiyon_ihtiyaci == "Evet" else False
+
+        existing_done = _is_completed_flag(prefill.get("aksiyon_tamamlandi", False)) if edit_kayit_id else False
+        existing_done_note = str(prefill.get("aksiyon_tamamlanma_notu", "") or "").strip() if edit_kayit_id else ""
+        existing_done_date = str(prefill.get("aksiyon_tamamlanma_tarihi", "") or "").strip() if edit_kayit_id else ""
+        keep_done = (final_aksiyon_ihtiyaci == "Evet") and existing_done and _has_completion_note(existing_done_note)
 
         new_record = {
             "kayit_id": final_kayit_id,
@@ -2439,7 +2490,9 @@ if sayfa == "1-1 Görüşme Kayıt":
             "aksiyon_ihtiyaci": final_aksiyon_ihtiyaci,
             "aksiyon_seviyesi": "Birim / YM" if final_aksiyon_ihtiyaci == "Evet" else "Yok",
             "aksiyon_notu": clean_note if (final_aksiyon_ihtiyaci == "Evet" and has_note) else "",
-            "aksiyon_tamamlandi": final_tamamlandi,
+            "aksiyon_tamamlandi": keep_done,
+            "aksiyon_tamamlanma_tarihi": existing_done_date if keep_done else "",
+            "aksiyon_tamamlanma_notu": existing_done_note if keep_done else "",
             "q_kapanis": q_kapanis.strip(),
             **{k: v.strip() for k, v in q_answers.items()},
             **{k: v.strip() for k, v in ik_answers.items()},
@@ -2633,7 +2686,9 @@ elif is_presentation_mod:
                 birim_ad = str(r_aks.get("birim", "") or "").strip()
                 gt_txt = _format_tr_date_input(r_aks.get("gorusme_tarihi", ""))
                 kid_str = str(r_aks.get("kayit_id", f"row_{idx_aks}") or f"row_{idx_aks}")
-                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False))
+                done_not_str = str(r_aks.get("aksiyon_tamamlanma_notu", "") or "").strip()
+                done_dt_str = _format_tr_date_input(r_aks.get("aksiyon_tamamlanma_tarihi", "")) or date.today().strftime("%d.%m.%Y")
+                is_done = _is_completed_flag(r_aks.get("aksiyon_tamamlandi", False)) and _has_completion_note(done_not_str)
                 aksiyon_not_kayitlari.append(
                     {
                         "kayit_id": kid_str,
@@ -2643,6 +2698,8 @@ elif is_presentation_mod:
                         "tarih": gt_txt,
                         "not": not_txt,
                         "tamamlandi": is_done,
+                        "tamamlanma_tarihi": done_dt_str,
+                        "tamamlanma_notu": done_not_str,
                     }
                 )
 
@@ -2654,7 +2711,7 @@ elif is_presentation_mod:
                 <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
                     <div>
                         <div style="font-size:1.25rem; font-weight:800; color:#F8FAFC; letter-spacing:-0.2px;">⚡ ÖNE ÇIKAN AKSİYON PLANI</div>
-                        <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Aksiyon planı gerekli kayıtlar — tamamlanan maddeleri sağdan işaretleyebilirsiniz</div>
+                        <div style="font-size:0.88rem; color:#CBD5E1; margin-top:0.15rem;">Tamamlandı seçildiğinde tamamlanma tarihi ve nasıl tamamlandığına dair not girilmesi zorunludur</div>
                     </div>
                     <div style="background:rgba(167,139,250,0.2); border:1px solid rgba(167,139,250,0.6); color:#DDD6FE; font-weight:800; font-size:0.9rem; padding:0.35rem 0.75rem; border-radius:999px;">
                         {acik_aksiyon_sayisi} Açık / {len(aksiyon_not_kayitlari)} Toplam Aksiyon
@@ -2671,30 +2728,86 @@ elif is_presentation_mod:
                 meta_str = " • ".join(meta_parcalar)
                 box_cls = "action-note-box-done" if item_aks["tamamlandi"] else "action-note-box"
                 durum_rozet = (
-                    '<span style="color:#34D399; font-weight:800; margin-left:0.5rem;">[✓ Tamamlandı]</span>'
+                    f'<span style="color:#34D399; font-weight:800; margin-left:0.5rem;">[✓ Tamamlandı • {item_aks["tamamlanma_tarihi"]}]</span>'
                     if item_aks["tamamlandi"]
                     else ""
                 )
-                row_txt_col, row_chk_col = st.columns([4.6, 1.1], vertical_alignment="center")
+                tamamlanma_ozet_html = (
+                    f'<div style="margin-top:0.45rem; padding-top:0.4rem; border-top:1px dashed rgba(52,211,153,0.35); font-size:0.86rem; color:#A7F3D0;">'
+                    f'<b>Tamamlanma Notu:</b> {item_aks["tamamlanma_notu"]}</div>'
+                    if item_aks["tamamlandi"] and item_aks["tamamlanma_notu"]
+                    else ""
+                )
+
+                uid_tag = f"{item_aks['kayit_id']}_{item_aks['sicil_no']}"
+                chk_key = f"aks_done_chk_{uid_tag}"
+                dt_key = f"aks_done_dt_{uid_tag}"
+                nt_key = f"aks_done_nt_{uid_tag}"
+                err_key = f"aks_done_err_{uid_tag}"
+
+                if chk_key not in st.session_state:
+                    st.session_state[chk_key] = item_aks["tamamlandi"]
+                if dt_key not in st.session_state:
+                    st.session_state[dt_key] = _parse_date_safe(item_aks["tamamlanma_tarihi"], fallback=date.today())
+                if nt_key not in st.session_state:
+                    st.session_state[nt_key] = item_aks["tamamlanma_notu"]
+
+                row_txt_col, row_chk_col = st.columns([4.4, 1.3], vertical_alignment="top")
                 with row_txt_col:
                     st.markdown(
                         f"""
                         <div class="{box_cls}">
                             <div style="font-size:0.82rem; color:{TEAL}; font-weight:800; margin-bottom:0.3rem;">▸ {meta_str}{durum_rozet}</div>
                             <div style="color:{TEXT_LIGHT}; font-size:0.98rem; font-weight:500; line-height:1.5;">{item_aks['not']}</div>
+                            {tamamlanma_ozet_html}
                         </div>
                         """,
                         unsafe_allow_html=True,
                     )
                 with row_chk_col:
-                    chk_key = f"aks_done_chk_{item_aks['kayit_id']}_{item_aks['sicil_no']}"
-                    new_done = st.checkbox(
-                        "Tamamlandı",
-                        value=item_aks["tamamlandi"],
-                        key=chk_key,
-                    )
-                    if new_done != item_aks["tamamlandi"]:
-                        update_action_completion_status(item_aks["kayit_id"], item_aks["sicil_no"], new_done)
+                    st.checkbox("Tamamlandı", key=chk_key)
+
+                if st.session_state[chk_key]:
+                    with st.container():
+                        f_dt_col, f_nt_col, f_btn_col = st.columns([1.2, 3.3, 1.1], vertical_alignment="bottom")
+                        with f_dt_col:
+                            st.date_input("Tamamlanma Tarihi", key=dt_key, format="DD.MM.YYYY")
+                        with f_nt_col:
+                            st.text_input(
+                                "Nasıl Tamamlandı? (Not Zorunlu)",
+                                key=nt_key,
+                                placeholder="Örn: Yönetici ve İK ile görüşüldü, ekip geçişi sağlandı.",
+                            )
+                        with f_btn_col:
+                            if st.button("Tamamlamayı Kaydet", key=f"aks_save_btn_{uid_tag}", use_container_width=True):
+                                note_input_val = str(st.session_state.get(nt_key, "") or "").strip()
+                                dt_input_val = _parse_date_safe(st.session_state.get(dt_key), fallback=date.today()).strftime("%d.%m.%Y")
+                                if not _has_completion_note(note_input_val):
+                                    st.session_state[chk_key] = False
+                                    st.session_state[err_key] = "Nasıl tamamlandığına dair not girmeden aksiyon tamamlanamaz!"
+                                    st.rerun()
+                                else:
+                                    st.session_state.pop(err_key, None)
+                                    update_action_completion_record(
+                                        kayit_id=item_aks["kayit_id"],
+                                        sicil_no=item_aks["sicil_no"],
+                                        completed=True,
+                                        completion_date=dt_input_val,
+                                        completion_note=note_input_val,
+                                    )
+                                    st.rerun()
+
+                        if st.session_state.get(err_key):
+                            st.warning(st.session_state[err_key])
+                else:
+                    if item_aks["tamamlandi"]:
+                        update_action_completion_record(
+                            kayit_id=item_aks["kayit_id"],
+                            sicil_no=item_aks["sicil_no"],
+                            completed=False,
+                            completion_date="",
+                            completion_note="",
+                        )
                         st.rerun()
         else:
             st.info("Seçili filtre kapsamında aksiyon planı gerekli kayıt bulunmuyor.")
